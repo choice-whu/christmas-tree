@@ -2,12 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <!-- 核心适配：viewport-fit=cover 适配刘海屏，禁止缩放 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>3D 灵动粒子圣诞树 - 本地相册版</title>
+    <title>3D 灵动粒子圣诞树 - 音乐无限版</title>
     <style>
         :root {
-            /* 定义安全区域变量，默认值为 20px */
             --safe-bottom: env(safe-area-inset-bottom, 20px);
         }
 
@@ -16,12 +14,12 @@
             height: 100%;
             margin: 0;
             padding: 0;
-            overflow: hidden; /* 彻底禁止滚动 */
+            overflow: hidden;
             background-color: #020205;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; /* 移动端首选字体栈 */
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             user-select: none;
-            -webkit-user-select: none; /* iOS Safari 防选择 */
-            touch-action: none; /* 禁止默认触摸行为 */
+            -webkit-user-select: none;
+            touch-action: none;
             -webkit-tap-highlight-color: transparent;
         }
 
@@ -34,7 +32,6 @@
             z-index: 1;
         }
         
-        /* 视频元素隐藏并防止占用布局 */
         .input_video {
             position: absolute;
             top: 0;
@@ -46,10 +43,8 @@
             height: 1px; 
         }
 
-        /* UI 层适配 */
         #ui-layer {
             position: absolute;
-            /* 智能底部边距：取 30px 和 安全区域 的最大值 */
             bottom: max(30px, var(--safe-bottom));
             left: 50%;
             transform: translateX(-50%);
@@ -73,7 +68,6 @@
             margin-bottom: 5px;
             opacity: 0.9;
             transition: all 0.3s;
-            /* 增加半透明背景，提升在杂乱背景下的可读性 */
             background: rgba(0, 0, 0, 0.3);
             padding: 4px 12px;
             border-radius: 12px;
@@ -127,18 +121,48 @@
             border: 1px solid rgba(255, 215, 0, 0.1);
         }
 
+        .toolbar {
+            display: flex;
+            gap: 15px;
+            pointer-events: auto;
+        }
+
         .toolbar button {
             background: rgba(20, 20, 30, 0.6);
             border: 1px solid rgba(255, 215, 0, 0.6);
             color: #ffd700;
-            padding: 10px 25px;
+            padding: 10px 20px;
             border-radius: 30px;
             cursor: pointer;
             font-size: 0.9rem;
             pointer-events: auto;
             backdrop-filter: blur(5px);
             -webkit-backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
         }
+
+        .toolbar button:active {
+            transform: scale(0.95);
+        }
+
+        /* 音乐播放状态样式 */
+        .toolbar button.playing {
+            background: rgba(255, 215, 0, 0.2);
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+            border-color: #ffd700;
+        }
+
+        /* 音乐图标动画 */
+        .music-icon {
+            display: inline-block;
+        }
+        .playing .music-icon {
+            animation: bounce 1s infinite alternate;
+        }
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
 
         #file-input { display: none; }
 
@@ -170,7 +194,6 @@
         
         #close-view-btn {
             position: absolute;
-            /* 按钮位置也需要适配安全区域 */
             bottom: calc(60px + var(--safe-bottom)); 
             left: 50%;
             transform: translateX(-50%);
@@ -189,19 +212,17 @@
         
         body.mouse-mode.viewing-photo #close-view-btn { display: block; }
 
-        /* === 媒体查询：针对小屏手机优化 === */
         @media (max-width: 400px) {
             h1 { font-size: 1.3rem; letter-spacing: 3px; }
             .switch-option { padding: 6px 12px; font-size: 0.8rem; }
-            .toolbar button { padding: 8px 20px; font-size: 0.85rem; }
+            .toolbar button { padding: 8px 15px; font-size: 0.85rem; }
             #gesture-hint { font-size: 0.85rem; }
         }
 
-        /* === 媒体查询：横屏模式布局重构 === */
         @media (max-height: 500px) and (orientation: landscape) {
-            h1 { display: none; } /* 横屏隐藏大标题节省空间 */
+            h1 { display: none; }
             #ui-layer {
-                flex-direction: row; /* 改为横向排列 */
+                flex-direction: row;
                 justify-content: center;
                 gap: 20px;
                 bottom: 15px;
@@ -209,7 +230,7 @@
             }
             #gesture-hint {
                 position: absolute;
-                top: -40px; /* 提示语移到上方 */
+                top: -40px;
                 width: 100%;
             }
         }
@@ -228,6 +249,11 @@
         <div id="loading-text">正在初始化...</div>
     </div>
 
+    <!-- 背景音乐：循环播放，预设为 music.mp3 -->
+    <audio id="bgm" loop>
+        <source src="music.mp3" type="audio/mpeg">
+    </audio>
+
     <div id="ui-layer">
         <div>
             <h1>MERRY CHRISTMAS</h1>
@@ -239,12 +265,16 @@
                 <span>👋</span> 智能手势
             </div>
             <div id="btn-mouse" class="switch-option" onclick="setControlMode('mouse')">
-                <!-- 文案根据设备自适应 -->
                 <span id="mouse-mode-text">🖱️ 鼠标模式</span>
             </div>
         </div>
 
         <div class="toolbar">
+            <!-- 音乐按钮 -->
+            <button id="music-btn" onclick="toggleMusic()">
+                <span class="music-icon">🎵</span> <span id="music-text">播放音乐</span>
+            </button>
+            
             <button onclick="document.getElementById('file-input').click()" title="上传照片">
                 <span>📷</span> 上传照片
             </button>
@@ -256,36 +286,26 @@
 
     <div id="canvas-container"></div>
     
-    <!-- 关键属性：playsinline 和 webkit-playsinline 防止iOS自动全屏 -->
     <video class="input_video" playsinline webkit-playsinline muted autoplay></video>
 
     <script>
-        // ==========================================
-        // 全局配置与移动端检测
-        // ==========================================
-        // 检测是否为移动设备
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-        // 性能调优：移动端适当减少粒子以保证流畅度
         const PARTICLE_SCALE = isMobile ? 0.6 : 1.0; 
-        
         const BASE_PARTICLE_COUNT = Math.floor(5000 * PARTICLE_SCALE); 
         const ORNAMENT_PARTICLE_COUNT = Math.floor(2500 * PARTICLE_SCALE);
         const BAUBLE_PARTICLE_COUNT = Math.floor(200 * PARTICLE_SCALE); 
         const PHOTO_COUNT = isMobile ? 30 : 40; 
         
-        // 视觉调优：移动端缩小半径，适应窄屏
         const GALAXY_RADIUS = isMobile ? 380 : 480;
         const TREE_HEIGHT = isMobile ? 480 : 550;      
         const TREE_BASE_RADIUS = isMobile ? 220 : 260; 
-        const CAMERA_Z = isMobile ? 900 : 750; // 移动端拉远相机
+        const CAMERA_Z = isMobile ? 900 : 750;
 
-        // === 新增：本地照片自动加载配置 ===
-        // 请在 index.html 同级目录创建 photos 文件夹，并放入 1.jpg, 2.jpg...
         const LOCAL_PHOTO_CONFIG = {
-            folder: 'photos', // 文件夹名
-            count: 50,        // 尝试加载的图片最大编号 (1.jpg 到 50.jpg)
-            ext: '.jpg'       // 默认扩展名 (目前支持固定后缀)
+            folder: 'photos',
+            count: 50,
+            ext: '.jpg'
         };
 
         let scene, camera, renderer, raycaster;
@@ -293,12 +313,19 @@
         let particlesData = []; 
         let photosData = [];
         
-        // --- 核心状态 ---
         let controlMode = 'gesture';
-        let targetShape = 0; // 0=星云, 1=树
+        let targetShape = 0; 
         let currentShapeVal = 0;
         
-        let mouseX = 0, mouseY = 0;
+        // --- 旋转控制变量更新 ---
+        let mouseX = 0, mouseY = 0; // 仅用于 Raycaster
+        
+        // 360度旋转逻辑变量
+        let targetRotationX = 0;
+        let targetRotationY = 0;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+        
         let isFist = false;
         let isPointing = false; 
         
@@ -310,40 +337,42 @@
         let isViewingPhoto = false;
         
         let lastUploadTriggerTime = 0;
-        
-        // --- 惯性旋转系统变量 ---
         let rotationVelocity = { x: 0, y: 0 };
         let lastHandPos = { x: 0, y: 0 };
         
         let mouseVector;
         let textureLoader;
-        let uploadedTextures = []; // 存储所有图片纹理（包含上传和本地加载的）
+        let uploadedTextures = []; 
         
         let dummyTarget = null;
         let tempVec = null; 
 
         // 颜色配置
-        const basePalette = [
-            new THREE.Color(0.8, 0.9, 1.0), 
-            new THREE.Color(1.0, 0.1, 0.1),
-            new THREE.Color(0.1, 0.4, 1.0),
-            new THREE.Color(1.0, 1.0, 1.0) 
-        ];
-        const ornamentPalette = [
-            new THREE.Color(1.0, 0.8, 0.0), 
-            new THREE.Color(1.0, 1.0, 0.2), 
-            new THREE.Color(0.1, 1.0, 0.1), 
-            new THREE.Color(0.0, 0.9, 0.0) 
-        ];
-        const baublePalette = [
-            new THREE.Color(1.0, 0.1, 0.1), 
-            new THREE.Color(1.0, 0.84, 0.0), 
-            new THREE.Color(0.2, 0.6, 1.0), 
-            new THREE.Color(1.0, 0.3, 0.8), 
-            new THREE.Color(1.0, 1.0, 1.0)  
-        ];
-
+        const basePalette = [new THREE.Color(0.8, 0.9, 1.0), new THREE.Color(1.0, 0.1, 0.1), new THREE.Color(0.1, 0.4, 1.0), new THREE.Color(1.0, 1.0, 1.0)];
+        const ornamentPalette = [new THREE.Color(1.0, 0.8, 0.0), new THREE.Color(1.0, 1.0, 0.2), new THREE.Color(0.1, 1.0, 0.1), new THREE.Color(0.0, 0.9, 0.0)];
+        const baublePalette = [new THREE.Color(1.0, 0.1, 0.1), new THREE.Color(1.0, 0.84, 0.0), new THREE.Color(0.2, 0.6, 1.0), new THREE.Color(1.0, 0.3, 0.8), new THREE.Color(1.0, 1.0, 1.0)];
         const frameColors = [0xD4AF37, 0xC0C0C0, 0x2E8B57, 0xB8860B];
+
+        // --- 音乐控制逻辑 ---
+        function toggleMusic() {
+            const audio = document.getElementById('bgm');
+            const btn = document.getElementById('music-btn');
+            const text = document.getElementById('music-text');
+            
+            if (audio.paused) {
+                audio.play().then(() => {
+                    btn.classList.add('playing');
+                    text.innerText = "暂停音乐";
+                }).catch(e => {
+                    alert("请确保文件夹中存在 music.mp3 文件！");
+                    console.error(e);
+                });
+            } else {
+                audio.pause();
+                btn.classList.remove('playing');
+                text.innerText = "播放音乐";
+            }
+        }
 
         function setControlMode(mode) {
             controlMode = mode;
@@ -352,6 +381,11 @@
             
             if (mode === 'mouse') {
                 document.body.classList.add('mouse-mode');
+                // 切换到鼠标模式时，同步当前的旋转，防止跳变
+                if(scene) {
+                    targetRotationY = scene.rotation.y;
+                    targetRotationX = scene.rotation.x;
+                }
             } else {
                 document.body.classList.remove('mouse-mode');
             }
@@ -372,17 +406,15 @@
         function updateHintText() {
             const hint = document.getElementById('gesture-hint');
             const mouseBtnText = document.getElementById('mouse-mode-text');
-            
-            // 更新按钮文案
             mouseBtnText.innerText = isMobile ? "👆 触控模式" : "🖱️ 鼠标模式";
 
             if (controlMode === 'gesture') {
                 hint.innerText = "👋 手掌旋转 | ☝️ 食指看图 | ✊ 握拳变树";
             } else {
                 if (isMobile) {
-                    hint.innerText = "👆 单指拖动旋转 | ✌️ 双指上下滑动变形";
+                    hint.innerText = "👆 自由拖拽旋转 | ✌️ 双指变形";
                 } else {
-                    hint.innerText = "🖱️ 拖拽旋转 | 滚轮变形 | 点击查看照片";
+                    hint.innerText = "🖱️ 拖拽旋转 | 滚轮变形 | 点击查看";
                 }
             }
         }
@@ -393,9 +425,6 @@
             });
         }
 
-        // ==========================================
-        // 3D 核心逻辑
-        // ==========================================
         function initThree() {
             if (typeof THREE === 'undefined') {
                 setTimeout(initThree, 100);
@@ -417,18 +446,13 @@
             camera.position.y = 20;
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-            
-            // 关键优化：限制像素比为2，避免 Retina 屏幕性能问题
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             container.appendChild(renderer.domElement);
             
             raycaster = new THREE.Raycaster();
-            // 增大移动端点击判定范围
-            if (isMobile) {
-                raycaster.params.Points.threshold = 10;
-            }
+            if (isMobile) raycaster.params.Points.threshold = 10;
 
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
@@ -437,7 +461,6 @@
             scene.add(pointLight);
             
             createParticleStar();
-            // 移动端粒子稍微大一点，看起来更饱满
             const baseSize = isMobile ? 9.0 : 7.0;
             const ornSize = isMobile ? 18.0 : 16.0;
             
@@ -445,53 +468,35 @@
             createParticleSystem(ORNAMENT_PARTICLE_COUNT, ornamentPalette, ornSize, 'ornament');
             createParticleSystem(BAUBLE_PARTICLE_COUNT, baublePalette, 25.0, 'bauble');
             createPhotoGallery();
-
-            // === 新增：启动本地图片加载 ===
             loadLocalPhotos();
 
             window.addEventListener('resize', onWindowResize, false);
+            // 绑定事件到 document 以捕获全局拖拽
             document.addEventListener('mousemove', onDocumentMouseMove, false);
             document.addEventListener('click', onDocumentClick, false);
             
             animate();
         }
 
-        // === 新增：本地图片加载函数 ===
         function loadLocalPhotos() {
-            console.log("正在尝试加载本地 photos 文件夹中的图片...");
             const loader = new THREE.TextureLoader();
-            
-            // 循环尝试加载 1.jpg 到 50.jpg
             for (let i = 1; i <= LOCAL_PHOTO_CONFIG.count; i++) {
                 const path = `${LOCAL_PHOTO_CONFIG.folder}/${i}${LOCAL_PHOTO_CONFIG.ext}`;
-                
-                loader.load(
-                    path,
-                    // 加载成功的回调
-                    function (texture) {
+                loader.load(path, function (texture) {
                         texture.colorSpace = THREE.SRGBColorSpace;
                         texture.minFilter = THREE.LinearFilter;
                         uploadedTextures.push(texture);
-                        updatePhotoMaterials(); // 立即刷新材质显示
-                        console.log(`已加载本地图片: ${path}`);
-                    },
-                    // 进度回调 (不处理)
-                    undefined,
-                    // 错误回调 (忽略，因为可能没有那么多图片)
-                    function (err) {
-                        // console.log(`未找到 ${path}，跳过`);
-                    }
+                        updatePhotoMaterials(); 
+                    }, undefined, function (err) {}
                 );
             }
         }
 
         function createGlowTexture(isBright = false) {
-            // 缩小 Canvas 尺寸以提升生成性能
             const canvas = document.createElement('canvas');
             canvas.width = 32; canvas.height = 32; 
             const ctx = canvas.getContext('2d');
             const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
-            
             if (isBright) {
                 grad.addColorStop(0, 'rgba(255,255,255,1)');
                 grad.addColorStop(0.15, 'rgba(255,255,255,1)'); 
@@ -502,7 +507,6 @@
                 grad.addColorStop(0.2, 'rgba(255,255,255,0.6)');
                 grad.addColorStop(1, 'rgba(0,0,0,0)');
             }
-            
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, 32, 32);
             const tex = new THREE.CanvasTexture(canvas);
@@ -530,17 +534,11 @@
                 const t = Math.random(); 
                 const angle = t * 25 + i * 0.02; 
                 let currentRadius = TREE_BASE_RADIUS * Math.pow((1 - t), 1.1);
-                
                 const rParams = Math.random();
                 let r;
-                
-                if (type === 'bauble') {
-                    r = (0.95 + 0.1 * Math.random()) * currentRadius;
-                } else if (type === 'ornament') {
-                    r = (rParams > 0.1 ? 0.9 + 0.15*Math.random() : Math.random()) * currentRadius;
-                } else {
-                    r = (rParams > 0.3 ? 0.6 + 0.4*Math.random() : Math.random()) * currentRadius;
-                }
+                if (type === 'bauble') r = (0.95 + 0.1 * Math.random()) * currentRadius;
+                else if (type === 'ornament') r = (rParams > 0.1 ? 0.9 + 0.15*Math.random() : Math.random()) * currentRadius;
+                else r = (rParams > 0.3 ? 0.6 + 0.4*Math.random() : Math.random()) * currentRadius;
                 
                 const treeY = -TREE_HEIGHT/2 + t * TREE_HEIGHT;
                 const branchNoise = Math.sin(t * 40) * Math.cos(angle * 6) * 15; 
@@ -571,7 +569,7 @@
         function createPhotoGallery() {
             photoGroup = new THREE.Group();
             scene.add(photoGroup);
-            const photoSize = isMobile ? 30 : 24; // 移动端照片稍微大点
+            const photoSize = isMobile ? 30 : 24; 
             const borderSize = photoSize + 4;
             const defaultPhotoMat = new THREE.MeshBasicMaterial({ color: 0x888888, side: THREE.DoubleSide });
             const defaultPhotoGeo = new THREE.PlaneGeometry(photoSize, photoSize);
@@ -583,18 +581,14 @@
                 const colorHex = frameColors[Math.floor(Math.random() * frameColors.length)];
                 
                 const borderMat = new THREE.MeshStandardMaterial({ 
-                    color: colorHex, 
-                    roughness: 0.1, 
-                    metalness: 0.1, 
-                    emissive: colorHex,
-                    emissiveIntensity: 0.8 
+                    color: colorHex, roughness: 0.1, metalness: 0.1, emissive: colorHex, emissiveIntensity: 0.8 
                 });
                 
                 const borderMesh = new THREE.Mesh(borderGeo, borderMat);
                 borderMesh.position.z = -1.1; 
                 borderMesh.userData = { originalEmissiveIntensity: 0.8 };
-                
                 itemGroup.add(borderMesh);
+                
                 const photoMesh = new THREE.Mesh(defaultPhotoGeo, defaultPhotoMat.clone());
                 photoMesh.userData = { parentGroup: itemGroup, isPhoto: true }; 
                 itemGroup.add(photoMesh);
@@ -652,16 +646,13 @@
 
         function selectClosestPhoto() {
             if (activePhoto) return; 
-
             scene.updateMatrixWorld(true);
-
             let minDistance = Infinity;
             let closestGroup = null;
 
             photosData.forEach(p => {
                 p.group.getWorldPosition(tempVec);
                 const screenPos = tempVec.clone().project(camera);
-                
                 if (screenPos.z < 1) { 
                     const distance = Math.sqrt(screenPos.x * screenPos.x + screenPos.y * screenPos.y);
                     if (distance < minDistance) {
@@ -671,14 +662,11 @@
                 }
             });
 
-            // 移动端放宽选择阈值
             const threshold = isMobile ? 0.5 : 0.4;
             if (closestGroup && minDistance < threshold) { 
                 viewPhoto(closestGroup);
                 return true; 
-            } else {
-                return false; 
-            }
+            } else return false; 
         }
 
         function triggerUpload() {
@@ -687,7 +675,6 @@
                 lastUploadTriggerTime = now;
                 document.getElementById('file-input').click();
                 const hint = document.getElementById('gesture-hint');
-                const originalText = hint.innerText;
                 hint.innerText = "📤 触发上传...";
                 setTimeout(() => { updateHintText(); }, 1500);
             }
@@ -698,9 +685,7 @@
 
             const dt = 0.04;
             currentShapeVal += (targetShape - currentShapeVal) * dt;
-            
             const time = Date.now() * 0.001;
-            
             const breath = Math.sin(time * 1.2) * 0.02 * currentShapeVal; 
             const scaleY = 1 + breath * 0.5;
             const scaleXZ = 1 + breath;
@@ -716,27 +701,19 @@
                 starSystem.visible = false;
             }
 
+            // === 核心修改：无限旋转逻辑 ===
             if (!isViewingPhoto) {
                 if (controlMode === 'mouse') {
-                    // 移动端降低旋转灵敏度
-                    const sens = isMobile ? 0.0015 : 0.0008;
-                    
-                    if (isMouseDown) {
-                         // 跟随手指/鼠标
-                         scene.rotation.y += ((-mouseX * sens) - scene.rotation.y) * 0.1;
-                         scene.rotation.x += ((-mouseY * sens) - scene.rotation.x) * 0.1;
-                    } else {
-                         // 缓慢回正
-                         scene.rotation.x += 0.05 * ((-mouseY * 0.0002) - scene.rotation.x);
-                         scene.rotation.y += 0.05 * ((-mouseX * 0.0002) - scene.rotation.y);
-                    }
+                    // 鼠标/触控模式：根据 targetRotation 平滑插值，实现 360 度无限旋转
+                    scene.rotation.y += (targetRotationY - scene.rotation.y) * 0.1;
+                    scene.rotation.x += (targetRotationX - scene.rotation.x) * 0.1;
                 } else if (controlMode === 'gesture') {
                     if (!isFist && !isPointing) {
                         rotationVelocity.x *= 0.95;
                         rotationVelocity.y *= 0.95;
                         scene.rotation.y += rotationVelocity.y;
                         scene.rotation.x += rotationVelocity.x;
-                        scene.rotation.x = Math.max(-0.5, Math.min(0.5, scene.rotation.x));
+                        // === 修改：移除了 X 轴的角度限制 Math.max/min ===
                     } else if (isFist) {
                         scene.rotation.y += 0.005;
                         scene.rotation.x += (0 - scene.rotation.x) * 0.05;
@@ -746,6 +723,7 @@
                 rotationVelocity.x *= 0.9;
                 rotationVelocity.y *= 0.9;
             }
+            // ============================
 
             const basePositions = baseParticleSystem.geometry.attributes.position.array;
             const ornamentPositions = ornamentParticleSystem.geometry.attributes.position.array;
@@ -772,7 +750,6 @@
 
                 const wind = isFist ? 0.5 : 2.0; 
                 const windOffset = Math.sin(time * 2 + targetY * 0.05) * wind * currentShapeVal;
-
                 const x = targetX + Math.sin(time * 3 + p.phase) * wind + windOffset;
                 const y = targetY + Math.cos(time * 2 + p.phase) * wind;
                 const z = targetZ + Math.sin(time * 2.5 + p.phase) * wind;
@@ -841,27 +818,20 @@
                 const dist = isMobile ? 380 : 300; 
                 const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
                 const worldTargetPos = camera.position.clone().add(forwardVec.multiplyScalar(dist));
-                
                 const localTargetPos = activePhoto.parent.worldToLocal(worldTargetPos.clone());
-                
                 activePhoto.position.lerp(localTargetPos, 0.08);
                 
                 const targetQuaternion = new THREE.Quaternion();
                 const currentQuaternion = activePhoto.quaternion.clone();
-                
                 activePhoto.lookAt(camera.position); 
                 targetQuaternion.copy(activePhoto.quaternion);
-                
                 activePhoto.quaternion.copy(currentQuaternion);
                 activePhoto.quaternion.slerp(targetQuaternion, 0.08);
-
                 activePhoto.scale.lerp(new THREE.Vector3(22, 22, 22), 0.08); 
             }
         }
 
-        // 统一点击处理
         function onDocumentClick(event) {
-            // 忽略 UI 点击
             if (event.target.closest('button') || event.target.closest('.switch-option') || event.target.closest('input')) return;
             
             if (isViewingPhoto) {
@@ -880,10 +850,7 @@
                     const group = selectedMesh.userData.parentGroup;
                     viewPhoto(group);
                 } else {
-                    // 如果没有点中照片，且没有加载任何图片，可以提示上传
-                    if(uploadedTextures.length === 0) {
-                         document.getElementById('file-input').click();
-                    }
+                    if(uploadedTextures.length === 0) document.getElementById('file-input').click();
                 }
             }
         }
@@ -905,7 +872,6 @@
         window.closePhotoView = closePhotoView;
 
         function initControls() {
-            // PC 端滚轮控制
             window.addEventListener('wheel', (e) => {
                 if (controlMode !== 'mouse' || isViewingPhoto) return;
                 const delta = e.deltaY * 0.002; 
@@ -914,13 +880,18 @@
                 isFist = scrollProgress > 0.5;
             }, { passive: false });
             
-            // 统一鼠标事件
-            document.addEventListener('mousedown', () => { if(controlMode==='mouse') isMouseDown = true; });
+            document.addEventListener('mousedown', (e) => { 
+                if(controlMode==='mouse') {
+                    isMouseDown = true; 
+                    lastMouseX = e.clientX;
+                    lastMouseY = e.clientY;
+                }
+            });
             document.addEventListener('mouseup', () => { isMouseDown = false; });
             
             // --- 移动端触控逻辑增强 ---
-            let initialPinchDistance = 0;
             let lastTouchY = 0;
+            let lastTouchX = 0;
 
             document.addEventListener('touchstart', (e) => { 
                 if(controlMode !== 'mouse') return;
@@ -928,10 +899,12 @@
                 if (e.touches.length === 1) {
                     isMouseDown = true; 
                     const touch = e.touches[0];
+                    lastTouchX = touch.clientX;
+                    lastTouchY = touch.clientY;
+                    // 更新用于点击判断的 mouseX/Y
                     mouseX = (touch.clientX - window.innerWidth / 2);
                     mouseY = (touch.clientY - window.innerHeight / 2);
                 } else if (e.touches.length === 2) {
-                    // 记录双指初始位置，用于模拟变形
                     lastTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
                 }
             }, { passive: false });
@@ -940,38 +913,65 @@
             
             document.addEventListener('touchmove', (e) => {
                  if (controlMode !== 'mouse') return;
-                 e.preventDefault(); // 阻止浏览器滚动
+                 e.preventDefault(); 
                  
-                 // 单指：旋转视角
+                 // 单指：无限旋转
                  if (e.touches.length === 1) {
                      const touch = e.touches[0];
+                     
+                     // 1. 更新用于点击检测的坐标
                      mouseX = (touch.clientX - window.innerWidth / 2);
                      mouseY = (touch.clientY - window.innerHeight / 2);
-                     
                      mouseVector.x = (touch.clientX / window.innerWidth) * 2 - 1;
                      mouseVector.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+
+                     // 2. 计算滑动增量 (Delta)
+                     const deltaX = touch.clientX - lastTouchX;
+                     const deltaY = touch.clientY - lastTouchY;
+                     
+                     // 3. 累加旋转角度 (灵敏度 0.005)
+                     if (!isViewingPhoto) {
+                        targetRotationY += deltaX * 0.005;
+                        targetRotationX += deltaY * 0.005;
+                     }
+                     
+                     lastTouchX = touch.clientX;
+                     lastTouchY = touch.clientY;
                  }
-                 // 双指：垂直滑动模拟滚轮变形
+                 // 双指：变形
                  else if (e.touches.length === 2 && !isViewingPhoto) {
                      const currentTouchY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-                     const deltaY = lastTouchY - currentTouchY; // 向上滑为正
-                     
-                     // 调整灵敏度
+                     const deltaY = lastTouchY - currentTouchY; 
                      scrollProgress = Math.max(0, Math.min(1, scrollProgress + deltaY * 0.005));
                      targetShape = scrollProgress;
                      isFist = scrollProgress > 0.5;
-                     
                      lastTouchY = currentTouchY;
                  }
             }, {passive: false});
         }
 
+        // 修改 PC 端鼠标移动逻辑，支持无限旋转
         function onDocumentMouseMove(event) {
+            // 1. 始终更新 Raycaster 用的坐标
             mouseVector.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouseVector.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            if (controlMode === 'mouse') {
-                mouseX = (event.clientX - window.innerWidth / 2);
-                mouseY = (event.clientY - window.innerHeight / 2);
+            mouseX = (event.clientX - window.innerWidth / 2);
+            mouseY = (event.clientY - window.innerHeight / 2);
+
+            // 2. 如果在鼠标模式且按住：计算 Delta 并旋转
+            if (controlMode === 'mouse' && isMouseDown && !isViewingPhoto) {
+                const deltaX = event.clientX - lastMouseX;
+                const deltaY = event.clientY - lastMouseY;
+                
+                targetRotationY += deltaX * 0.005;
+                targetRotationX += deltaY * 0.005;
+                
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
+            } else {
+                // 未按住时，只更新最后位置，防止下次点击跳变
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
             }
         }
 
