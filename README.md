@@ -1,0 +1,144 @@
+# 树上的圣诞相册 · 3D Christmas Tree Photo Wall
+
+> **A zero-backend, privacy-first 3D interactive Christmas tree & nebula photo wall.**  
+> Download or clone this repository, double-click `start.bat` (Windows) or `start.command` (macOS), and upload your own photos & music right in the browser (persisted locally via IndexedDB) — or drop images into `photos/` and run `node scripts/sync-photos.mjs` to deploy your own static site on GitHub Pages.
+
+<p align="center">
+  <img src="./docs/preview-tree.png" alt="3D 圣诞树照片墙预览" width="49%">
+  <img src="./docs/preview-nebula.png" alt="星云散开形态预览" width="49%">
+</p>
+
+---
+
+## 项目特点
+
+- **纯净全屏树景**：六层松枝粒子圣诞树与宽疏星云自由切换，界面平时不显示任何干扰文字，操作集中在边角图标（按钮名称与状态支持读屏读取）。
+- **下载即用、零构建依赖**：纯原生 HTML / CSS / ES Modules 静态站点，内置 Three.js `0.128.0`。无需打包编译，仓库根目录双击脚本即可一键启动本地服务。
+- **两种方式换上你的照片与音乐**：
+  1. **网页可视化自定义（零代码，浏览器本地持久化）**：点击右下角自定义图标，可随时**一键替换全部示例图、追加照片、拖入图片、单张移除、清空或更换背景音乐**；所有改动保存在当前浏览器的 IndexedDB 中，刷新不会丢失，也可一键恢复仓库默认。
+  2. **替换文件夹并同步（适合 Fork 自部署 GitHub Pages）**：直接把任意文件名与数量的照片放进 `photos/`（按需替换根目录 `music.mp3`），运行零依赖同步脚本即可生成缩略图并更新 `index.html`，直接推送到你的 GitHub 仓库即可公开访问。
+- **隔空手势 + 鼠键触控双支持**：
+  - 普通浏览：鼠标 / 触屏拖拽旋转、点击相框看大图、打开右下角相册网格翻页浏览；3D 不可用时自动降级展示静态树图与完整相册。
+  - 摄像头手势（在 `localhost` 或 `HTTPS` 下开启右上角相机图标）：张手散成星云并移动旋转、握拳聚成树、拇指与食指半捏合出现跟手光点瞄准、捏住将照片放大至中央，松手回飞原位。
+
+---
+
+## 快速开始（本地运行）
+
+### 方式 A：下载源码压缩包后双击启动（推荐）
+
+1. 在仓库页面点击 **Code → Download ZIP** 并解压（或 `git clone` 到本地）。
+2. 确保本机已安装 [Node.js](https://nodejs.org/) 或 [Python](https://www.python.org/)（任意一种即可）：
+   - **Windows**：双击根目录的 `start.bat`
+   - **macOS**：双击根目录的 `start.command`（如提示来源不明，右键点击并选择“打开”一次即可）
+3. 脚本会自动在 `127.0.0.1` 启动静态服务并打开 `http://localhost:8000/`（若端口被占用会自动顺延）。因为是 `localhost` 环境，摄像头手势也可正常启用。
+
+### 方式 B：命令行启动
+
+```powershell
+# 使用内置零依赖 Node 服务（自动探测可用端口并打开浏览器）
+node scripts/serve.mjs
+
+# 或使用 Python 静态服务
+python -m http.server 8000 --bind 127.0.0.1
+```
+
+---
+
+## 如何换上自己的照片与音乐
+
+### 方法 1：直接在网页里自定义（推荐个人本地使用）
+
+打开本地页面后，点击右下角中间的 **自定义图标（滑块图标）**：
+- **替换照片**：选择你的照片后自动替换当前所有示例照片（如未选中有效图片则保留原状）。
+- **追加照片 / 拖拽上传**：向树上追加更多照片，或直接把本地图片拖入自定义窗口（自定义照片上限 60 张，单张 ≤ 15 MB）。
+- **单张移除 / 清空**：点击缩略图右上角 `×` 移除单张，或一键清空。
+- **更换音乐**：选择本地音频文件（≤ 30 MB）替换默认配乐。
+- **恢复默认**：随时一键清除浏览器本地修改，回到仓库初始示例照片与音乐。
+
+> 说明：网页内的自定义修改存储在当前浏览器的 **IndexedDB** 中，只保存在你自己的电脑/浏览器里，不会上传到任何服务器。
+
+### 方法 2：替换 `photos/` 目录并同步（推荐部署到自己的 GitHub Pages）
+
+如果你想把**定制好照片的圣诞树**部署成在线网页发给朋友：
+
+1. Fork 本仓库（或将本地源码推送到你自己的 GitHub 仓库）。
+2. 删除 `photos/` 里的示例图片，放入你自己的照片（支持 `.jpg`、`.jpeg`、`.png`、`.webp`、`.avif`、`.gif`，支持中文或带空格的文件名）。
+3. 如需更换默认音乐，直接替换根目录的 `music.mp3`。
+4. 在仓库根目录运行零依赖同步脚本：
+
+```powershell
+node scripts/sync-photos.mjs
+```
+
+脚本会自动：
+- 按自然顺序扫描 `photos/` 下的图片；
+- 为新增或更新的图片生成缩略图到 `assets/thumbs/`（优先调用本机 Python Pillow 生成 WebP，macOS 下回退 `sips`，Windows 下回退 PowerShell `System.Drawing`，均不可用时直接引用原图），并清理已删除照片对应的旧缩略图；
+- 更新 `index.html` 中 `<!-- PHOTOS:START -->` 与 `<!-- PHOTOS:END -->` 之间的默认照片清单。
+5. 提交变更并在 GitHub 仓库设置 **Settings → Pages** 从默认分支根目录发布，即可通过你自己的 GitHub Pages 链接（HTTPS）完整体验包括摄像头手势在内的所有功能。
+
+---
+
+## 交互说明
+
+| 操作方式 | 触发位置 / 动作 | 效果 |
+| :--- | :--- | :--- |
+| 鼠标 / 触屏 | 拖动空白处 / 点击树上照片 | 旋转 3D 场景 / 打开对应照片大图 |
+| 形态切换 | 右上角树形 / 星云图标 | 在六层圣诞树与星云形态间平滑过渡 |
+| 相机手势 | 右上角相机图标 | 需在 `localhost` 或 `HTTPS` 下使用，首次开启按需从 jsDelivr 加载 MediaPipe Hands `0.4.1675469240` |
+| ↳ 张开手掌 | 五指张开并上下左右移动 | 散开为星云并控制场景旋转 |
+| ↳ 握拳 | 五指收拢握拳 | 聚拢回六层圣诞树 |
+| ↳ 捏合看图 | 拇指与食指半捏合瞄准，捏住确认 | 出现跟手光点高亮候选照片，捏住放大居中，松手回到原位 |
+| 相册与音乐 | 右下角相册 / 音乐图标 | 网格浏览所有照片（支持左右键与 `Esc`） / 播放或暂停背景音乐 |
+
+> 隐私与资源生命周期：关闭手势、打开相册、打开自定义面板或切到后台时，页面会立即停止并释放摄像头视频流。
+
+---
+
+## 目录结构
+
+```text
+.
+├─ index.html              # 页面入口、默认相册清单（PHOTOS 同步区）与自定义弹窗
+├─ start.bat               # Windows 双击启动脚本
+├─ start.command           # macOS 双击启动脚本
+├─ music.mp3               # 默认背景音乐
+├─ assets/
+│  ├─ site.css             # 全屏暗夜暖金样式与纯 CSS 图标
+│  ├─ star.png             # 站点图标
+│  ├─ tree-poster.webp     # WebGL 不可用时的静态降级图
+│  └─ thumbs/              # 对应照片的缩略图目录
+├─ photos/                 # 默认照片目录（支持放入自定义照片后运行同步脚本）
+├─ scripts/
+│  ├─ serve.mjs            # 零依赖 Node 静态服务（支持 Range 请求与自动找端口）
+│  └─ sync-photos.mjs      # 扫描 photos/ 生成缩略图并更新 index.html
+├─ src/
+│  ├─ main.js              # 应用入口、手势桥接、相册与自定义面板逻辑
+│  ├─ scene.js             # Three.js 六层圣诞树、星云着色器与动态照片排布
+│  ├─ photos.js            # 照片与音频集合管理（默认 + IndexedDB 自定义）
+│  ├─ storage.js           # IndexedDB 本地持久化封装
+│  ├─ gestures.js          # 手势姿势与捏合选图状态机
+│  ├─ camera.js            # 摄像头授权与 MediaPipe Hands 生命周期管理
+│  └─ vendor/              # 内置 Three.js 0.128.0 模块与许可证
+└─ tests/
+   ├─ gestures.test.mjs    # 手势状态机单元测试
+   └─ sync-photos.test.mjs # 照片目录同步脚本单元测试
+```
+
+---
+
+## 测试与验证
+
+在仓库根目录运行自动化单元测试（需 Node.js 20+）：
+
+```powershell
+node --test tests/*.test.mjs
+```
+
+---
+
+## 素材与开源协议
+
+- 本项目代码采用 [MIT License](./LICENSE) 开源。
+- 仓库默认自带的 12 张示例照片为暖冬主题原创与 CC0 公共领域摄影作品，仅作开箱展示使用，欢迎随时替换为你的照片。
+- 仓库内置 Three.js `0.128.0`（MIT License，详见 [src/vendor/THREE-LICENSE.txt](./src/vendor/THREE-LICENSE.txt)）。
