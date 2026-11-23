@@ -12,7 +12,11 @@ function hand(gap, { x = .28, y = .4, fingers = 'extended' } = {}) {
   points[4] = { x: x - gap * palm / 2, y };
   points[8] = { x: x + gap * palm / 2, y };
   if (fingers === 'fist') points[4].y = points[8].y = y + .14;
-  for (const tip of [12, 16, 20]) points[tip].y -= fingers === 'fist' ? .07 : .22;
+  const extendedCount = fingers === 'fist' ? 0 : fingers === 'one' ? 1 : fingers === 'two' ? 2 : fingers === 'three' ? 3 : 4;
+  if (extendedCount === 0) points[8].y = y + .14;
+  for (const [idx, tip] of [12, 16, 20].entries()) {
+    points[tip].y -= idx + 1 < extendedCount ? .22 : .07;
+  }
   return points;
 }
 
@@ -148,4 +152,31 @@ test('reports pose status and smooth pressProgress across the hold window', () =
   assert.equal(held.open, '12');
   assert.equal(held.status, 'held');
   assert.equal(held.pressProgress, 1);
+});
+
+test('gestures 1, 2, 3 switch to heart, ring, and spiral without triggering aim', () => {
+  const tracker = createGestureTracker();
+
+  const one0 = send(tracker, .72, 0, hit, { fingers: 'one' });
+  assert.equal(one0.status, 'one');
+  assert.equal(one0.aim, undefined);
+  assert.equal(one0.shape, undefined);
+  const one1 = send(tracker, .72, 150, hit, { fingers: 'one' });
+  assert.equal(one1.status, 'one');
+  assert.equal(one1.shape, 'heart');
+
+  send(tracker, .85, 200, hit, { fingers: 'two' });
+  const two1 = send(tracker, .85, 350, hit, { fingers: 'two' });
+  assert.equal(two1.status, 'two');
+  assert.equal(two1.shape, 'ring');
+
+  send(tracker, .90, 400, hit, { fingers: 'three' });
+  const three1 = send(tracker, .90, 550, hit, { fingers: 'three' });
+  assert.equal(three1.status, 'three');
+  assert.equal(three1.shape, 'spiral');
+
+  // Pinching with relaxed/extended fingers still aims cleanly
+  const aim = send(tracker, .60, 600, hit, { fingers: 'extended' });
+  assert.equal(aim.status, 'aim');
+  assert.equal(aim.target, '12');
 });

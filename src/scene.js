@@ -1,5 +1,13 @@
 const GOLD = 0xffd591;
 const POINTER_SLOP = 7;
+export const SHAPES = ['tree', 'nebula', 'heart', 'ring', 'spiral'];
+const SHAPE_SET = new Set(SHAPES);
+let threePromise = null;
+
+export function preloadSceneEngine() {
+  return threePromise ||= import('./vendor/three.module.js');
+}
+
 const BRANCH_TIERS = [
   { y: -2.91, radius: 2.99, rise: 1.49, branches: 13 },
   { y: -1.96, radius: 2.63, rise: 1.48, branches: 12 },
@@ -8,6 +16,25 @@ const BRANCH_TIERS = [
   { y: .92, radius: 1.26, rise: 1.32, branches: 9 },
   { y: 1.87, radius: .83, rise: 1.45, branches: 8 },
 ];
+
+const RING_COS_X = Math.cos(.4537856);
+const RING_SIN_X = Math.sin(.4537856);
+const RING_COS_Z = Math.cos(.2443461);
+const RING_SIN_Z = Math.sin(.2443461);
+
+function tiltRing(x, y, z) {
+  const y1 = y * RING_COS_X - z * RING_SIN_X;
+  const z1 = y * RING_SIN_X + z * RING_COS_X;
+  return [x * RING_COS_Z - y1 * RING_SIN_Z, x * RING_SIN_Z + y1 * RING_COS_Z, z1];
+}
+
+function heartPoint(u, shell, zOffset) {
+  const sinU = Math.sin(u);
+  const scale = .215 * shell;
+  const x = 16 * sinU * sinU * sinU * scale;
+  const y = (13 * Math.cos(u) - 5 * Math.cos(2 * u) - 2 * Math.cos(3 * u) - Math.cos(4 * u)) * scale + .25;
+  return [x, y, zOffset];
+}
 
 function randomSequence(seed) {
   return () => {
@@ -28,39 +55,47 @@ function branchRim(tier, angle) {
   return .84 + .16 * needleFan + .035 * Math.sin(angle * 3 + tier.y);
 }
 
-function pointCloud(THREE, treePositions, nebulaPositions, colors, sizes, phases, scale) {
+function pointCloud(THREE, fromAttr, targetAttr, colors, sizes, phases, scale) {
   const geometry = new THREE.BufferGeometry();
-  for (const [name, values, width] of [
-    ['position', treePositions, 3], ['aNebula', nebulaPositions, 3],
-    ['aTint', colors, 3], ['aSize', sizes, 1], ['aPhase', phases, 1],
-  ]) {
-    geometry.setAttribute(name, new THREE.Float32BufferAttribute(values, width));
-  }
+  geometry.setAttribute('position', fromAttr);
+  geometry.setAttribute('aTarget', targetAttr);
+  geometry.setAttribute('aTint', colors instanceof THREE.BufferAttribute ? colors : new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('aSize', sizes instanceof THREE.BufferAttribute ? sizes : new THREE.Float32BufferAttribute(sizes, 1));
+  geometry.setAttribute('aPhase', phases instanceof THREE.BufferAttribute ? phases : new THREE.Float32BufferAttribute(phases, 1));
+
   const material = new THREE.ShaderMaterial({
     uniforms: {
-      uShape: { value: 0 }, uTime: { value: 0 }, uScale: { value: scale }, uSpread: { value: 1 },
+      uMorph: { value: 0 },
+      uFromSpread: { value: 1 },
+      uToSpread: { value: 1 },
+      uNebulaMix: { value: 0 },
+      uHeartMix: { value: 0 },
+      uTime: { value: 0 },
+      uScale: { value: scale },
     },
     vertexShader: [
-      'attribute vec3 aNebula; attribute vec3 aTint; attribute float aSize; attribute float aPhase;',
-      'uniform float uShape; uniform float uTime; uniform float uScale; uniform float uSpread;',
+      'attribute vec3 aTarget; attribute vec3 aTint; attribute float aSize; attribute float aPhase;',
+      'uniform float uMorph; uniform float uFromSpread; uniform float uToSpread; uniform float uNebulaMix; uniform float uHeartMix; uniform float uTime; uniform float uScale;',
       'varying vec3 vTint; varying float vPulse;',
       'void main() {',
       '  float stagger = fract(aPhase * 0.15915494 + position.y * 0.085);',
-      '  float local = clamp((uShape - stagger * 0.24) / 0.76, 0.0, 1.0);',
+      '  float local = clamp((uMorph - stagger * 0.24) / 0.76, 0.0, 1.0);',
       '  float t = local * local * (3.0 - 2.0 * local);',
-      '  vec3 targetPos = aNebula * vec3(uSpread, 1.0, uSpread);',
-      '  vec3 point = mix(position, targetPos, t);',
+      '  vec3 p0 = position * vec3(uFromSpread, 1.0, uFromSpread);',
+      '  vec3 p1 = aTarget * vec3(uToSpread, 1.0, uToSpread);',
+      '  vec3 point = mix(p0, p1, t);',
       '  float swirl = sin(t * 3.14159265) * (0.95 + stagger * 0.55);',
       '  float cs = cos(swirl);',
       '  float sn = sin(swirl);',
       '  point.xz = mat2(cs, -sn, sn, cs) * point.xz;',
       '  point.y += sin(t * 3.14159265) * 0.16 * (stagger - 0.5);',
       '  float shimmer = sin(uTime * 1.2 + aPhase);',
-      '  point.x += sin(uTime * .62 + aPhase) * .035 * t;',
+      '  point.x += sin(uTime * .62 + aPhase) * .035 * uNebulaMix;',
       '  vec4 eyePoint = modelViewMatrix * vec4(point, 1.);',
       '  gl_Position = projectionMatrix * eyePoint;',
       '  gl_PointSize = clamp(aSize * uScale * 14. / -eyePoint.z, 1., 56.);',
-      '  vTint = aTint; vPulse = (.77 + .23 * shimmer) * (1.0 + 0.18 * sin(t * 3.14159265));',
+      '  vTint = mix(aTint, vec3(1.0, 0.56, 0.62), uHeartMix * 0.38);',
+      '  vPulse = (.77 + .23 * shimmer) * (1.0 + 0.18 * sin(t * 3.14159265));',
       '}',
     ].join('\n'),
     fragmentShader: [
@@ -87,23 +122,73 @@ function pointCloud(THREE, treePositions, nebulaPositions, colors, sizes, phases
 
 function makeTree(THREE, density, pixelRatio) {
   const random = randomSequence(1832);
-  const tree = [], nebula = [], colors = [], sizes = [], phases = [];
+  const tierCounts = BRANCH_TIERS.map(tier => ({
+    needles: Math.round((650 + tier.radius * 790) * density),
+    lamps: Math.round((137 + tier.radius * 108) * density),
+  }));
+  const baseCount = Math.round(340 * density);
+  const topCount = Math.round(60 * density);
+  const total = tierCounts.reduce((sum, item) => sum + item.needles + item.lamps, baseCount + topCount);
+
+  const tree = new Float32Array(total * 3);
+  const nebula = new Float32Array(total * 3);
+  const heart = new Float32Array(total * 3);
+  const ring = new Float32Array(total * 3);
+  const spiral = new Float32Array(total * 3);
+  const scratch = new Float32Array(total * 3);
+  const colors = new Float32Array(total * 3);
+  const sizes = new Float32Array(total);
+  const phases = new Float32Array(total);
+
   const green = [0x24563f, 0x367b4e, 0x459663, 0x79aa66];
   const warm = [0xd69544, 0xf4b96b, 0xffd49b, 0xffe9bc];
   const red = [0xbe332e, 0xd34c41, 0xef6756];
   const ink = new THREE.Color();
+  let cursor = 0;
+
   const add = (x, y, z, tint, size) => {
-    tree.push(x, y, z);
+    const idx = cursor++;
+    const i3 = idx * 3;
+    tree[i3] = x; tree[i3 + 1] = y; tree[i3 + 2] = z;
+
     const cloud = spherePoint(random, 1.35 + Math.pow(random(), .64) * 4.15);
-    nebula.push(cloud[0] * 1.09, cloud[1] * .74 + cloud[0] * .16, cloud[2] * .77);
+    nebula[i3] = cloud[0] * 1.09;
+    nebula[i3 + 1] = cloud[1] * .74 + cloud[0] * .16;
+    nebula[i3 + 2] = cloud[2] * .77;
+
+    const hu = random() * Math.PI * 2;
+    const hShell = Math.pow(random(), .35);
+    const hz = (random() - .5) * 2.2 * Math.sqrt(Math.max(.05, 1 - hShell * hShell * .72));
+    const hp = heartPoint(hu, hShell, hz);
+    heart[i3] = hp[0]; heart[i3 + 1] = hp[1]; heart[i3 + 2] = hp[2];
+
+    if (idx % 10 < 3) {
+      const rp = spherePoint(random, Math.pow(random(), 1 / 3) * 1.45);
+      ring[i3] = rp[0]; ring[i3 + 1] = rp[1]; ring[i3 + 2] = rp[2];
+    } else {
+      const rAngle = random() * Math.PI * 2;
+      const rRad = 2.25 + random() * 2.20;
+      const rp = tiltRing(Math.cos(rAngle) * rRad, (random() - .5) * .20, Math.sin(rAngle) * rRad);
+      ring[i3] = rp[0]; ring[i3 + 1] = rp[1]; ring[i3 + 2] = rp[2];
+    }
+
+    const arm = idx % 3;
+    const st = random();
+    const sy = (st - .5) * 6.4 + (random() - .5) * .24;
+    const sTheta = st * Math.PI * 4.5 + arm * (Math.PI * 2 / 3) + (random() - .5) * .22;
+    const sr = 1.1 + 2.3 * Math.sin(st * Math.PI * .85 + .2) + (random() - .5) * .52;
+    spiral[i3] = Math.cos(sTheta) * sr;
+    spiral[i3 + 1] = sy;
+    spiral[i3 + 2] = Math.sin(sTheta) * sr;
+
     ink.setHex(tint);
-    colors.push(ink.r, ink.g, ink.b);
-    sizes.push(size * 1.08);
-    phases.push(random() * Math.PI * 2);
+    colors[i3] = ink.r; colors[i3 + 1] = ink.g; colors[i3 + 2] = ink.b;
+    sizes[idx] = size * 1.08;
+    phases[idx] = random() * Math.PI * 2;
   };
 
   for (const [index, tier] of BRANCH_TIERS.entries()) {
-    const needles = Math.round((650 + tier.radius * 790) * density);
+    const { needles, lamps } = tierCounts[index];
     for (let i = 0; i < needles; i++) {
       const angle = random() * Math.PI * 2;
       const outward = Math.pow(random(), .49);
@@ -119,7 +204,6 @@ function makeTree(THREE, density, pixelRatio) {
         palette[Math.floor(random() * palette.length)], size);
     }
 
-    const lamps = Math.round((137 + tier.radius * 108) * density);
     for (let i = 0; i < lamps; i++) {
       const progress = i / lamps;
       const angle = progress * Math.PI * 1.84 + index * 1.1 + .21;
@@ -132,31 +216,48 @@ function makeTree(THREE, density, pixelRatio) {
     }
   }
 
-  for (let i = 0; i < 340 * density; i++) {
+  for (let i = 0; i < baseCount; i++) {
     const angle = random() * Math.PI * 2;
     const radius = 2.64 + random() * .54;
     add(Math.cos(angle) * radius, -3.44 + (random() - .5) * .13, Math.sin(angle) * radius,
       warm[i % warm.length], 2.8 + random() * 4.2);
   }
-  for (let i = 0; i < 60 * density; i++) {
+  for (let i = 0; i < topCount; i++) {
     const angle = random() * Math.PI * 2;
     const radius = random() * .39;
     add(Math.cos(angle) * radius, 3.51 + Math.sin(angle) * radius, (random() - .5) * .25,
       warm[i % warm.length], 2.1 + random() * 5);
   }
-  return pointCloud(THREE, tree, nebula, colors, sizes, phases, pixelRatio);
+
+  const shapeAttrs = {
+    tree: new THREE.Float32BufferAttribute(tree, 3),
+    nebula: new THREE.Float32BufferAttribute(nebula, 3),
+    heart: new THREE.Float32BufferAttribute(heart, 3),
+    ring: new THREE.Float32BufferAttribute(ring, 3),
+    spiral: new THREE.Float32BufferAttribute(spiral, 3),
+  };
+  const scratchAttr = new THREE.Float32BufferAttribute(scratch, 3);
+  const points = pointCloud(THREE, shapeAttrs.tree, shapeAttrs.tree, colors, sizes, phases, pixelRatio);
+  return { points, shapeAttrs, scratchAttr, total };
 }
 
 function makeStars(THREE, pixelRatio) {
   const random = randomSequence(38769);
-  const positions = [], colors = [], sizes = [], phases = [];
+  const positions = new Float32Array(450 * 3);
+  const colors = new Float32Array(450 * 3);
+  const sizes = new Float32Array(450);
+  const phases = new Float32Array(450);
   for (let i = 0; i < 450; i++) {
-    positions.push((random() - .5) * 19, (random() - .5) * 13, -2.4 - random() * 4.7);
-    colors.push(.55, .66, .78);
-    sizes.push(.9 + Math.pow(random(), 5) * 4.8);
-    phases.push(random() * 6.28);
+    const i3 = i * 3;
+    positions[i3] = (random() - .5) * 19;
+    positions[i3 + 1] = (random() - .5) * 13;
+    positions[i3 + 2] = -2.4 - random() * 4.7;
+    colors[i3] = .55; colors[i3 + 1] = .66; colors[i3 + 2] = .78;
+    sizes[i] = .9 + Math.pow(random(), 5) * 4.8;
+    phases[i] = random() * 6.28;
   }
-  return pointCloud(THREE, positions, positions, colors, sizes, phases, pixelRatio);
+  const starAttr = new THREE.Float32BufferAttribute(positions, 3);
+  return pointCloud(THREE, starAttr, starAttr, colors, sizes, phases, pixelRatio);
 }
 
 function makeFinial(THREE) {
@@ -188,6 +289,8 @@ const NEBULA_FRONT = [
   [-3.30, -1.75, 1.43], [4.24, -1.29, 1.04], [-.79, -.60, 2.11], [1.27, 1.02, 2.08],
 ];
 
+const HEART_FRONT_U = [.68, 1.25, 1.92, 2.62, 3.66, 4.36, 5.03, 5.60];
+
 function locatePhoto(THREE, index) {
   const random = randomSequence(7327 + index * 719);
   const sideIndex = Math.max(0, index - FRONT_POSITIONS.length);
@@ -198,16 +301,38 @@ function locatePhoto(THREE, index) {
   const tree = FRONT_POSITIONS[index] || [Math.sin(angle) * radius, tier.y + .23 + random() * .33, Math.cos(angle) * radius];
   const cloud = spherePoint(random, 2.8 + random() * 2.13);
   const nebula = NEBULA_FRONT[index] || [cloud[0] * 1.06, cloud[1] * .72 + cloud[0] * .13, cloud[2] * .80];
+
+  const heart = index < HEART_FRONT_U.length
+    ? heartPoint(HEART_FRONT_U[index], .86, .72 + (index % 2) * .42)
+    : heartPoint(.4 + ((sideIndex * .61803398875) % 1) * (Math.PI * 2 - .8), .82, -.65 - (sideIndex % 3) * .28);
+
+  const ringAngle = index < 8
+    ? (index / 8) * Math.PI * 2 + .35
+    : ((sideIndex * .61803398875 + .12) % 1) * Math.PI * 2;
+  const ringRad = index < 8 ? 3.20 + (index % 2) * .72 : 2.55 + random() * 1.65;
+  const ring = tiltRing(Math.cos(ringAngle) * ringRad, index < 8 ? (index % 3 - 1) * .16 : (random() - .5) * .30, Math.sin(ringAngle) * ringRad);
+
+  const spiralT = index < 8 ? (index + .5) / 8 : ((sideIndex * .61803398875 + .18) % 1);
+  const spiralY = (spiralT - .5) * (index < 8 ? 4.8 : 5.2);
+  const spiralTheta = index < 8
+    ? spiralT * Math.PI * 3.4 - .6
+    : spiralT * Math.PI * 4.5 + (sideIndex % 3) * (Math.PI * 2 / 3) + Math.PI;
+  const spiralR = (index < 8 ? 1.55 : 1.45) + (index < 8 ? 1.85 : 2.0) * Math.sin(spiralT * Math.PI * .85 + .2);
+  const spiral = [Math.cos(spiralTheta) * spiralR, spiralY, Math.sin(spiralTheta) * spiralR];
+
   return {
     tree: new THREE.Vector3(...tree),
     nebula: new THREE.Vector3(...nebula),
+    heart: new THREE.Vector3(...heart),
+    ring: new THREE.Vector3(...ring),
+    spiral: new THREE.Vector3(...spiral),
     outward: new THREE.Vector3(tree[0], 0, tree[2]).normalize(),
     tilt: (random() - .5) * .22,
   };
 }
 
 export async function loadScene(options) {
-  const THREE = await import('./vendor/three.module.js');
+  const THREE = await preloadSceneEngine();
   if (!options.isCurrent()) return null;
   return createScene(THREE, options);
 }
@@ -234,7 +359,7 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
   const camera = new THREE.PerspectiveCamera(35, 1, .1, 90);
   const root = new THREE.Group();
   scene.add(root);
-  const treePoints = makeTree(THREE, compact ? .50 : .72, pixelRatio);
+  const { points: treePoints, shapeAttrs, scratchAttr, total: particleCount } = makeTree(THREE, compact ? .50 : .72, pixelRatio);
   const stars = makeStars(THREE, pixelRatio);
   const finial = makeFinial(THREE);
   root.add(treePoints, finial);
@@ -244,7 +369,8 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
   const coordinates = new THREE.Vector2();
   const projected = new THREE.Vector3();
   const world = new THREE.Vector3();
-  const spreadPosition = new THREE.Vector3();
+  const toPos = new THREE.Vector3();
+  const fromPosScratch = new THREE.Vector3();
   const outward = new THREE.Vector3();
   const axisZ = new THREE.Vector3(0, 0, 1);
   const tiltRotation = new THREE.Quaternion();
@@ -262,9 +388,11 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
   let running = false;
   let dirty = true;
   let disposed = false;
-  let targetShape = 0;
-  let shapeProgress = 0;
-  let shape = 0;
+  let fromShape = 'tree';
+  let toShape = 'tree';
+  let morphProgress = 1;
+  let customCamDistance = 14.25;
+  let customCamY = -.14;
   let aiming = false;
   let highlight = null;
   let hoverId = null;
@@ -336,6 +464,7 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
     root.add(holder);
     data.set(photo.id, {
       ...position,
+      fromPos: position.tree.clone(),
       order,
       thumbnail: photo.thumbnail,
       holder,
@@ -352,7 +481,7 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
   }
 
   function loadNextTextures() {
-    while (activeJobs < 4 && textureJobs.length && !disposed) {
+    while (activeJobs < 8 && textureJobs.length && !disposed) {
       const photo = textureJobs.shift();
       const entry = data.get(photo.id);
       if (!entry || entry.disposed || entry.thumbnail !== photo.thumbnail) continue;
@@ -374,7 +503,7 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
         entry.mesh.material.needsUpdate = true;
         entry.image = texture;
         applyEntryScale(entry);
-        entry.holder.visible = photo.id !== floatingPhoto;
+        updatePhotos(0);
         dirty = true;
         if (!running) draw(0);
         done();
@@ -382,21 +511,45 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
     }
   }
 
+  function shapeDistance(name) {
+    if (name === 'nebula') return Math.max(15.7, 12.8 / camera.aspect);
+    if (name === 'ring') return Math.max(16.0, 13.0 / camera.aspect);
+    if (name === 'spiral') return Math.max(15.2, 11.6 / camera.aspect);
+    if (name === 'heart') return Math.max(14.6, 11.0 / camera.aspect);
+    return Math.max(14.25, 10.65 / camera.aspect);
+  }
+
+  function applyShapeSpread(target, shapeName) {
+    if (shapeName === 'nebula') {
+      target.x *= nebulaSpread;
+      target.z *= nebulaSpread;
+    }
+  }
+
   function updatePhotos(dt) {
     root.updateWorldMatrix(false, false);
     cameraFacing.copy(root.quaternion).invert();
     const scaleAlpha = (reducedMotion || dt === 0) ? 1 : 1 - Math.exp(-dt / .075);
+    const eased = morphProgress * morphProgress * (3 - 2 * morphProgress);
+    const treeWeight = (fromShape === 'tree' ? 1 - eased : 0) + (toShape === 'tree' ? eased : 0);
+
     for (const entry of data.values()) {
       if (!entry.image) continue;
-      spreadPosition.copy(entry.nebula);
-      spreadPosition.x *= nebulaSpread;
-      spreadPosition.z *= nebulaSpread;
+      if (fromShape === 'custom') {
+        fromPosScratch.copy(entry.fromPos);
+      } else {
+        fromPosScratch.copy(entry[fromShape]);
+        applyShapeSpread(fromPosScratch, fromShape);
+      }
+      toPos.copy(entry[toShape]);
+      applyShapeSpread(toPos, toShape);
+
       const photoStagger = (entry.order % 8) / 8 * .22;
-      const local = THREE.MathUtils.clamp((shapeProgress - photoStagger) / .78, 0, 1);
-      const eased = local * local * (3 - 2 * local);
-      entry.holder.position.copy(entry.tree).lerp(spreadPosition, eased);
-      const arc = Math.sin(eased * Math.PI) * .55;
-      if (arc) {
+      const local = morphProgress >= 1 ? 1 : THREE.MathUtils.clamp((morphProgress - photoStagger) / .78, 0, 1);
+      const photoEased = local * local * (3 - 2 * local);
+      entry.holder.position.copy(fromPosScratch).lerp(toPos, photoEased);
+      if (fromShape !== toShape && photoEased > 0 && photoEased < 1) {
+        const arc = Math.sin(photoEased * Math.PI) * .55;
         const cs = Math.cos(arc);
         const sn = Math.sin(arc);
         const px = entry.holder.position.x;
@@ -413,7 +566,7 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
       const isHot = isPinchHot || isHoverHot;
       const facing = outward.copy(entry.outward).applyQuaternion(root.quaternion).z;
       const treeVisibility = THREE.MathUtils.smoothstep(facing, .28, .71);
-      const opacity = THREE.MathUtils.lerp(treeVisibility * .99, .58 + front * .38, eased);
+      const opacity = THREE.MathUtils.lerp(.58 + front * .38, treeVisibility * .99, treeWeight);
       entry.lastOpacity = opacity;
       entry.holder.visible = floatingPhoto !== entry.id && (isHot || opacity >= .06);
       entry.mesh.material.opacity = isHot ? 1 : opacity;
@@ -429,17 +582,24 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
     }
   }
 
+  function currentCameraParams(eased) {
+    const d0 = fromShape === 'custom' ? customCamDistance : shapeDistance(fromShape);
+    const d1 = shapeDistance(toShape);
+    const y0 = fromShape === 'custom' ? customCamY : (fromShape === 'tree' ? -.14 : 0);
+    const y1 = toShape === 'tree' ? -.14 : 0;
+    return {
+      distance: THREE.MathUtils.lerp(d0, d1, eased),
+      y: THREE.MathUtils.lerp(y0, y1, eased),
+    };
+  }
+
   function draw(dt) {
     if (!aiming && !viewing) {
       if (reducedMotion) {
-        shapeProgress = targetShape;
-      } else if (shapeProgress !== targetShape) {
-        const delta = dt / 1.05;
-        shapeProgress = shapeProgress < targetShape
-          ? Math.min(targetShape, shapeProgress + delta)
-          : Math.max(targetShape, shapeProgress - delta);
+        morphProgress = 1;
+      } else if (morphProgress < 1) {
+        morphProgress = Math.min(1, morphProgress + dt / 1.05);
       }
-      shape = shapeProgress * shapeProgress * (3 - 2 * shapeProgress);
 
       if (!reducedMotion && !pointer) {
         if (inertiaX || inertiaY) {
@@ -461,24 +621,27 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
       root.rotation.x = THREE.MathUtils.lerp(root.rotation.x, targetX, rotSmoothing);
       root.rotation.y = THREE.MathUtils.lerp(root.rotation.y, targetY, rotSmoothing);
     }
+    const eased = morphProgress * morphProgress * (3 - 2 * morphProgress);
     const zoomAlpha = (reducedMotion || dt === 0) ? 1 : 1 - Math.exp(-dt / .095);
     zoom = THREE.MathUtils.lerp(zoom, targetZoom, zoomAlpha);
     if (Math.abs(zoom - targetZoom) < .0008) zoom = targetZoom;
 
-    const treeDistance = Math.max(14.25, 10.65 / camera.aspect);
-    const nebulaDistance = Math.max(15.7, 12.8 / camera.aspect);
-    const baseDistance = THREE.MathUtils.lerp(treeDistance, nebulaDistance, shape);
-    camera.position.set(
-      0,
-      THREE.MathUtils.lerp(-.14, 0, shape),
-      baseDistance * zoom + Math.sin(shape * Math.PI) * .85
-    );
-    treePoints.material.uniforms.uShape.value = shapeProgress;
-    treePoints.material.uniforms.uSpread.value = nebulaSpread;
-    treePoints.material.uniforms.uTime.value = elapsed;
+    const cam = currentCameraParams(eased);
+    const activeMorph = fromShape === toShape ? 0 : Math.sin(eased * Math.PI) * .85;
+    camera.position.set(0, cam.y, cam.distance * zoom + activeMorph);
+
+    const uniforms = treePoints.material.uniforms;
+    uniforms.uMorph.value = fromShape === toShape ? 1 : morphProgress;
+    uniforms.uFromSpread.value = fromShape === 'nebula' ? nebulaSpread : 1;
+    uniforms.uToSpread.value = toShape === 'nebula' ? nebulaSpread : 1;
+    uniforms.uNebulaMix.value = (fromShape === 'nebula' ? 1 - eased : 0) + (toShape === 'nebula' ? eased : 0);
+    uniforms.uHeartMix.value = (fromShape === 'heart' ? 1 - eased : 0) + (toShape === 'heart' ? eased : 0);
+    uniforms.uTime.value = elapsed;
     stars.material.uniforms.uTime.value = elapsed * .58;
-    finial.visible = shape < .94;
-    finial.children[0].material.opacity = 1 - shape;
+
+    const treeWeight = (fromShape === 'tree' ? 1 - eased : 0) + (toShape === 'tree' ? eased : 0);
+    finial.visible = treeWeight > .06;
+    finial.children[0].material.opacity = treeWeight;
     finial.quaternion.copy(root.quaternion).invert();
     if (!reducedMotion) finial.scale.setScalar(1 + Math.sin(elapsed * 1.8) * .048);
     updatePhotos(dt);
@@ -785,6 +948,9 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
           const position = locatePhoto(THREE, order);
           existing.tree.copy(position.tree);
           existing.nebula.copy(position.nebula);
+          existing.heart.copy(position.heart);
+          existing.ring.copy(position.ring);
+          existing.spiral.copy(position.spiral);
           existing.outward.copy(position.outward);
           existing.tilt = position.tilt;
           existing.order = order;
@@ -836,7 +1002,73 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
     },
     setReducedMotion(value) { reducedMotion = value; dirty = true; },
     setRunning,
-    setShape(value) { targetShape = value === 'nebula' ? 1 : 0; dirty = true; },
+    setShape(nextShape) {
+      if (!SHAPE_SET.has(nextShape) || nextShape === toShape) return;
+      const geometry = treePoints.geometry;
+      if (morphProgress >= 1 || fromShape === toShape) {
+        fromShape = toShape;
+        toShape = nextShape;
+        geometry.setAttribute('position', shapeAttrs[fromShape]);
+        geometry.setAttribute('aTarget', shapeAttrs[toShape]);
+      } else {
+        const fromArr = geometry.getAttribute('position').array;
+        const toArr = geometry.getAttribute('aTarget').array;
+        const phaseArr = geometry.getAttribute('aPhase').array;
+        const out = scratchAttr.array;
+        const fromSpread = fromShape === 'nebula' ? nebulaSpread : 1;
+        const toSpread = toShape === 'nebula' ? nebulaSpread : 1;
+        const eased = morphProgress * morphProgress * (3 - 2 * morphProgress);
+        const cam = currentCameraParams(eased);
+        customCamDistance = cam.distance;
+        customCamY = cam.y;
+
+        for (let i = 0; i < particleCount; i++) {
+          const i3 = i * 3;
+          const py = fromArr[i3 + 1];
+          const phase = phaseArr[i];
+          const rawStagger = phase * .15915494 + py * .085;
+          const stagger = rawStagger - Math.floor(rawStagger);
+          const local = Math.max(0, Math.min(1, (morphProgress - stagger * .24) / .76));
+          const t = local * local * (3 - 2 * local);
+
+          const x0 = fromArr[i3] * fromSpread;
+          const z0 = fromArr[i3 + 2] * fromSpread;
+          const x1 = toArr[i3] * toSpread;
+          const y1 = toArr[i3 + 1];
+          const z1 = toArr[i3 + 2] * toSpread;
+
+          let px = x0 + (x1 - x0) * t;
+          let pY = py + (y1 - py) * t;
+          let pz = z0 + (z1 - z0) * t;
+
+          const sinT = Math.sin(t * Math.PI);
+          const swirl = sinT * (.95 + stagger * .55);
+          const cs = Math.cos(swirl);
+          const sn = Math.sin(swirl);
+          const rx = px * cs - pz * sn;
+          const rz = px * sn + pz * cs;
+          px = rx;
+          pz = rz;
+          pY += sinT * .16 * (stagger - .5);
+
+          out[i3] = px;
+          out[i3 + 1] = pY;
+          out[i3 + 2] = pz;
+        }
+        scratchAttr.needsUpdate = true;
+        for (const entry of data.values()) {
+          entry.fromPos.copy(entry.holder.position);
+        }
+        fromShape = 'custom';
+        toShape = nextShape;
+        geometry.setAttribute('position', scratchAttr);
+        geometry.setAttribute('aTarget', shapeAttrs[toShape]);
+      }
+
+      morphProgress = reducedMotion ? 1 : 0;
+      dirty = true;
+      if (!running) draw(0);
+    },
     setViewing(value) {
       if (value) {
         clearHover();

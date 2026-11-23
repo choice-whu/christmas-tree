@@ -1,10 +1,18 @@
-import { loadScene } from './scene.js';
-import { startCamera } from './camera.js';
+import { loadScene, preloadSceneEngine } from './scene.js';
+import { preloadCameraLibrary, startCamera } from './camera.js';
 import { createGestureTracker } from './gestures.js';
 import { createLocalStore } from './storage.js';
 import { createPhotoCollection } from './photos.js';
 
 const DEFAULT_MUSIC_SRC = './music.mp3';
+const SHAPE_ORDER = ['tree', 'nebula', 'heart', 'ring', 'spiral'];
+const SHAPE_META = {
+  tree: { name: '圣诞树', gesture: '握拳' },
+  nebula: { name: '星云', gesture: '张手' },
+  heart: { name: '爱心', gesture: '手势 1' },
+  ring: { name: '土星环', gesture: '手势 2' },
+  spiral: { name: '星河螺旋', gesture: '手势 3' },
+};
 const HAND_BONES = [
   [0, 1], [1, 2], [2, 3], [3, 4],
   [0, 5], [5, 6], [6, 7], [7, 8],
@@ -15,8 +23,11 @@ const HAND_BONES = [
 ];
 const POSE_LABELS = {
   none: '未检测到手',
-  open: '张手 · 旋转星云',
+  open: '张手 · 星云旋转',
   fist: '握拳 · 圣诞树',
+  one: '手势 1 · 爱心',
+  two: '手势 2 · 土星环',
+  three: '手势 3 · 星河螺旋',
   neutral: '手势待命中',
   aim: '半捏 · 瞄准中',
   press: '捏住 · 锁定中…',
@@ -39,8 +50,6 @@ const cameraToggle = byId('camera-toggle');
 const cameraOverlay = byId('camera-overlay');
 const overlayCtx = cameraOverlay?.getContext('2d');
 const video = byId('camera-feed');
-const album = byId('album');
-const albumButton = byId('album-button');
 const grid = byId('prints');
 const dialog = byId('photo-viewer');
 const viewerImage = byId('viewer-image');
@@ -99,11 +108,18 @@ function showToast(message, duration = 4200) {
   }, duration);
 }
 
-function setShape(value) {
+function setShape(value, { notify = false } = {}) {
+  if (!SHAPE_META[value]) return;
   shape = value;
   scene?.setShape(value);
-  shapeButton.setAttribute('aria-pressed', String(value === 'nebula'));
-  shapeButton.setAttribute('aria-label', value === 'tree' ? '切换到星云' : '切换到圣诞树');
+  shapeButton.dataset.shape = value;
+  shapeButton.setAttribute('aria-pressed', String(value !== 'tree'));
+  const nextShape = SHAPE_ORDER[(SHAPE_ORDER.indexOf(value) + 1) % SHAPE_ORDER.length];
+  shapeButton.setAttribute('aria-label', `切换到${SHAPE_META[nextShape].name}`);
+  if (notify) {
+    const meta = SHAPE_META[value];
+    showToast(`形态：${meta.name}（${meta.gesture}）`, 2200);
+  }
 }
 
 function renderPhoto(index) {
@@ -184,7 +200,7 @@ function finishPhoto(view) {
   viewerImage.removeAttribute('src');
   scene?.setFloatingPhoto(null);
   scene?.setViewing(false);
-  const opener = view.opener?.getClientRects().length ? view.opener : albumButton;
+  const opener = view.opener?.getClientRects().length ? view.opener : studioButton;
   opener.focus({ preventScroll: true });
 }
 
@@ -250,29 +266,6 @@ dialog.addEventListener('click', event => {
   if (event.target !== dialog) return;
   const area = viewerImage.getBoundingClientRect();
   if (event.clientX < area.left || event.clientX > area.right || event.clientY < area.top || event.clientY > area.bottom) closePhoto();
-});
-
-albumButton.addEventListener('click', event => {
-  event.preventDefault();
-  if (camera) stopGesture();
-  album.showModal();
-  updateRunning();
-});
-byId('album-close').addEventListener('click', () => album.close());
-album.addEventListener('close', () => {
-  updateRunning();
-  albumButton.focus({ preventScroll: true });
-});
-album.addEventListener('click', event => {
-  if (event.target !== album) return;
-  const bounds = album.getBoundingClientRect();
-  if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) album.close();
-});
-grid.addEventListener('click', event => {
-  const tile = event.target.closest('[data-photo-id]');
-  if (!tile || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-  event.preventDefault();
-  openPhoto(tile.dataset.photoId, tile);
 });
 
 function clearAim() {
@@ -399,12 +392,8 @@ function cameraError(error) {
   return '相机手势暂时不可用，可重试或继续浏览。';
 }
 
-gestureButton.addEventListener('click', async () => {
-  if (!scene || !cameraSupported) return;
-  if (camera) {
-    stopGesture();
-    return;
-  }
+async function startGesture({ auto = false } = {}) {
+  if (!scene || !cameraSupported || camera) return;
   const session = { controller: new AbortController(), tracker: createGestureTracker() };
   camera = session;
   cameraState('busy', '正在开启摄像头和手势识别。');
@@ -417,17 +406,35 @@ gestureButton.addEventListener('click', async () => {
       },
     });
     if (camera !== session) return;
-    cameraState('active', '摄像头已开启。张手散开并移动旋转，握拳聚成树，半捏合移动光点，捏住放大照片。');
-    showToast('摄像头已开启 · 张手散开旋转 · 握拳成树 · 半捏瞄准，捏住放大', 5000);
+    cameraState('active', '摄像头已开启。握拳圣诞树，张手星云旋转，手势1爱心，手势2土星环，手势3星河螺旋，半捏瞄准捏住看图。');
+    showToast('摄像头已开启 · 握拳圣诞树 · 张手星云 · 1爱心 · 2土星环 · 3螺旋 · 捏合看图', 5500);
   } catch (error) {
-    if (camera === session) stopGesture(cameraError(error));
+    if (camera !== session) return;
+    if (auto) {
+      stopGesture();
+      if (error?.name !== 'AbortError') {
+        showToast('未能自动开启摄像头，可点击右上角相机图标手动开启', 4000);
+      }
+      return;
+    }
+    stopGesture(cameraError(error));
   }
+}
+
+gestureButton.addEventListener('click', () => {
+  if (!scene || !cameraSupported) return;
+  if (camera) {
+    stopGesture();
+    return;
+  }
+  startGesture({ auto: false });
 });
 
 shapeButton.addEventListener('click', () => {
   if (camera) camera.tracker.cancel(performance.now());
   clearAim();
-  setShape(shape === 'tree' ? 'nebula' : 'tree');
+  const next = SHAPE_ORDER[(SHAPE_ORDER.indexOf(shape) + 1) % SHAPE_ORDER.length];
+  setShape(next, { notify: true });
 });
 reduceMotion.addEventListener('change', event => {
   scene?.setReducedMotion(event.matches);
@@ -436,8 +443,7 @@ reduceMotion.addEventListener('change', event => {
 });
 
 function updateRunning() {
-  const modalOpen = album.open || studio.open;
-  scene?.setRunning(!document.hidden && !modalOpen);
+  scene?.setRunning(!document.hidden && !studio.open);
   if (document.hidden && camera) stopGesture();
 }
 document.addEventListener('visibilitychange', updateRunning);
@@ -464,7 +470,7 @@ function showStaticScene() {
   delete stage.dataset.live;
   shapeButton.hidden = true;
   gestureButton.hidden = true;
-  announce(stageStatus, '当前无法使用 3D，可通过相册查看所有照片。');
+  announce(stageStatus, '当前无法使用 3D，可通过右下角自定义面板查看所有照片。');
 }
 
 async function initializeScene() {
@@ -538,12 +544,18 @@ function renderStudio() {
   const tiles = collection.all.map((photo, index) => {
     const card = document.createElement('div');
     card.className = 'studio-tile';
+    const viewButton = document.createElement('button');
+    viewButton.type = 'button';
+    viewButton.className = 'studio-thumb';
+    viewButton.dataset.viewId = photo.id;
+    viewButton.setAttribute('aria-label', `查看大图 ${photo.alt}`);
     const img = document.createElement('img');
     img.src = photo.thumbnail;
     img.alt = photo.alt;
     img.loading = 'lazy';
     img.decoding = 'async';
-    card.append(img);
+    viewButton.append(img);
+    card.append(viewButton);
 
     if (index > 0) {
       const pin = document.createElement('button');
@@ -655,17 +667,23 @@ studioGrid.addEventListener('click', async event => {
     }
     return;
   }
-  const button = event.target.closest('[data-remove-id]');
-  if (!button) return;
-  setStudioBusy(true);
-  try {
-    const removed = await collection.removePhoto(button.dataset.removeId);
-    if (removed) {
-      syncScenePhotos();
-      announce(studioStatus, '已移除 1 张照片。');
+  const removeButton = event.target.closest('[data-remove-id]');
+  if (removeButton) {
+    setStudioBusy(true);
+    try {
+      const removed = await collection.removePhoto(removeButton.dataset.removeId);
+      if (removed) {
+        syncScenePhotos();
+        announce(studioStatus, '已移除 1 张照片。');
+      }
+    } finally {
+      setStudioBusy(false);
     }
-  } finally {
-    setStudioBusy(false);
+    return;
+  }
+  const viewButton = event.target.closest('[data-view-id]');
+  if (viewButton) {
+    openPhoto(viewButton.dataset.viewId, viewButton);
   }
 });
 
@@ -777,6 +795,8 @@ musicButton.addEventListener('click', async () => {
 });
 
 async function boot() {
+  preloadSceneEngine().catch(() => {});
+  if (cameraSupported) preloadCameraLibrary();
   try {
     const hydrated = await collection.hydrate();
     syncMusicSource(hydrated.customMusic);
@@ -790,6 +810,9 @@ async function boot() {
   musicButton.hidden = false;
   renderStudio();
   await initializeScene();
+  if (scene && sceneInitCurrent && cameraSupported && !document.hidden) {
+    startGesture({ auto: true });
+  }
 }
 
 boot();

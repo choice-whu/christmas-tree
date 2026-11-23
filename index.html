@@ -7,12 +7,19 @@
   <meta name="description" content="开源 3D 圣诞树照片墙：支持手势交互、网页自定义照片与音乐，以及本地目录同步。">
   <title>树上的圣诞相册</title>
   <link rel="icon" type="image/png" href="./assets/star.png">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="modulepreload" href="./src/main.js">
+  <link rel="modulepreload" href="./src/scene.js">
+  <link rel="modulepreload" href="./src/vendor/three.module.js">
+  <link rel="modulepreload" href="./src/photos.js">
+  <link rel="modulepreload" href="./src/storage.js">
+  <link rel="modulepreload" href="./src/gestures.js">
+  <link rel="modulepreload" href="./src/camera.js">
   <link rel="stylesheet" href="./assets/site.css">
   <script type="module" src="./src/main.js"></script>
   <noscript><style>
     body { overflow: auto; }
-    #album:not([open]) { display: block; position: relative; inset: auto; }
-    #album-close { display: none; }
+    #prints[hidden] { display: grid !important; padding: 24px; }
   </style></noscript>
 </head>
 <body>
@@ -37,10 +44,9 @@
 
       <div class="controls controls-top" role="group" aria-label="圣诞树控制">
         <button class="control" id="gesture-button" type="button" aria-label="开启手势" aria-pressed="false" hidden><i class="icon icon-camera" aria-hidden="true"><b></b></i></button>
-        <button class="control" id="shape-button" type="button" aria-label="切换到星云" aria-pressed="false" hidden><i class="icon icon-tree" aria-hidden="true"><b></b></i><i class="icon icon-nebula" aria-hidden="true"><b></b></i></button>
+        <button class="control" id="shape-button" type="button" data-shape="tree" aria-label="切换到星云" aria-pressed="false" hidden><i class="icon icon-tree" aria-hidden="true"><b></b></i><i class="icon icon-nebula" aria-hidden="true"><b></b></i><i class="icon icon-heart" aria-hidden="true"><b></b></i><i class="icon icon-ring" aria-hidden="true"><b></b></i><i class="icon icon-spiral" aria-hidden="true"><b></b></i></button>
       </div>
-      <nav class="controls controls-bottom" aria-label="照片与音乐">
-        <a class="control" id="album-button" href="#album" aria-label="打开相册" aria-haspopup="dialog"><i class="icon icon-album" aria-hidden="true"><b></b></i></a>
+      <nav class="controls controls-bottom" aria-label="自定义与音乐">
         <button class="control" id="studio-button" type="button" aria-label="自定义照片与音乐" aria-haspopup="dialog" hidden><i class="icon icon-studio" aria-hidden="true"><b></b></i></button>
         <button class="control" id="music-button" type="button" aria-label="播放音乐" aria-pressed="false" hidden><i class="icon icon-music" aria-hidden="true"><b></b></i></button>
       </nav>
@@ -50,27 +56,22 @@
       <p class="sr-only" id="upload-status" role="status"></p>
     </figure>
 
-    <dialog class="album" id="album" aria-label="相册">
-      <div class="album-top">
-        <button class="control" id="album-close" type="button" aria-label="关闭相册" autofocus><i class="icon icon-close" aria-hidden="true"><b></b></i></button>
-      </div>
-      <div class="prints" id="prints">
-        <!-- PHOTOS:START -->
-        <a class="print" data-photo-id="1" href="./photos/01-snowy-cabin.jpg" aria-label="查看第 1 张照片"><img src="./assets/thumbs/01-snowy-cabin.webp" alt="相册照片 1" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="2" href="./photos/02-candle-pine.jpg" aria-label="查看第 2 张照片"><img src="./assets/thumbs/02-candle-pine.webp" alt="相册照片 2" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="3" href="./photos/03-hot-cocoa.jpg" aria-label="查看第 3 张照片"><img src="./assets/thumbs/03-hot-cocoa.webp" alt="相册照片 3" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="4" href="./photos/04-fireplace-glow.jpg" aria-label="查看第 4 张照片"><img src="./assets/thumbs/04-fireplace-glow.webp" alt="相册照片 4" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="5" href="./photos/05-golden-bokeh.jpg" aria-label="查看第 5 张照片"><img src="./assets/thumbs/05-golden-bokeh.webp" alt="相册照片 5" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="6" href="./photos/06-pine-lights.jpg" aria-label="查看第 6 张照片"><img src="./assets/thumbs/06-pine-lights.webp" alt="相册照片 6" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="7" href="./photos/07-red-ornament.jpg" aria-label="查看第 7 张照片"><img src="./assets/thumbs/07-red-ornament.webp" alt="相册照片 7" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="8" href="./photos/08-cottage-wreath.jpg" aria-label="查看第 8 张照片"><img src="./assets/thumbs/08-cottage-wreath.webp" alt="相册照片 8" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="9" href="./photos/09-gingerbread-treats.jpg" aria-label="查看第 9 张照片"><img src="./assets/thumbs/09-gingerbread-treats.webp" alt="相册照片 9" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="10" href="./photos/10-winter-pinecone.jpg" aria-label="查看第 10 张照片"><img src="./assets/thumbs/10-winter-pinecone.webp" alt="相册照片 10" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="11" href="./photos/11-spruce-sparkle.jpg" aria-label="查看第 11 张照片"><img src="./assets/thumbs/11-spruce-sparkle.webp" alt="相册照片 11" loading="lazy" decoding="async" width="384" height="480"></a>
-        <a class="print" data-photo-id="12" href="./photos/12-hearth-wood.jpg" aria-label="查看第 12 张照片"><img src="./assets/thumbs/12-hearth-wood.webp" alt="相册照片 12" loading="lazy" decoding="async" width="384" height="480"></a>
-        <!-- PHOTOS:END -->
-      </div>
-    </dialog>
+    <div class="prints" id="prints" hidden>
+      <!-- PHOTOS:START -->
+      <a class="print" data-photo-id="1" href="./photos/01-snowy-cabin.jpg" aria-label="查看第 1 张照片"><img src="./assets/thumbs/01-snowy-cabin.webp" alt="相册照片 1" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="2" href="./photos/02-candle-pine.jpg" aria-label="查看第 2 张照片"><img src="./assets/thumbs/02-candle-pine.webp" alt="相册照片 2" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="3" href="./photos/03-hot-cocoa.jpg" aria-label="查看第 3 张照片"><img src="./assets/thumbs/03-hot-cocoa.webp" alt="相册照片 3" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="4" href="./photos/04-fireplace-glow.jpg" aria-label="查看第 4 张照片"><img src="./assets/thumbs/04-fireplace-glow.webp" alt="相册照片 4" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="5" href="./photos/05-golden-bokeh.jpg" aria-label="查看第 5 张照片"><img src="./assets/thumbs/05-golden-bokeh.webp" alt="相册照片 5" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="6" href="./photos/06-pine-lights.jpg" aria-label="查看第 6 张照片"><img src="./assets/thumbs/06-pine-lights.webp" alt="相册照片 6" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="7" href="./photos/07-red-ornament.jpg" aria-label="查看第 7 张照片"><img src="./assets/thumbs/07-red-ornament.webp" alt="相册照片 7" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="8" href="./photos/08-cottage-wreath.jpg" aria-label="查看第 8 张照片"><img src="./assets/thumbs/08-cottage-wreath.webp" alt="相册照片 8" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="9" href="./photos/09-gingerbread-treats.jpg" aria-label="查看第 9 张照片"><img src="./assets/thumbs/09-gingerbread-treats.webp" alt="相册照片 9" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="10" href="./photos/10-winter-pinecone.jpg" aria-label="查看第 10 张照片"><img src="./assets/thumbs/10-winter-pinecone.webp" alt="相册照片 10" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="11" href="./photos/11-spruce-sparkle.jpg" aria-label="查看第 11 张照片"><img src="./assets/thumbs/11-spruce-sparkle.webp" alt="相册照片 11" loading="lazy" decoding="async" width="384" height="480"></a>
+      <a class="print" data-photo-id="12" href="./photos/12-hearth-wood.jpg" aria-label="查看第 12 张照片"><img src="./assets/thumbs/12-hearth-wood.webp" alt="相册照片 12" loading="lazy" decoding="async" width="384" height="480"></a>
+      <!-- PHOTOS:END -->
+    </div>
 
     <dialog class="studio" id="studio" aria-labelledby="studio-title">
       <div class="studio-head">

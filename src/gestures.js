@@ -8,6 +8,14 @@ const QUIET_MS = 260;
 const CLOSED = .30;
 const RELEASED = .48;
 const AIM_LIMIT = .82;
+const COUNT_MIN_GAP = .58;
+const POSE_TO_SHAPE = {
+  fist: 'tree',
+  open: 'nebula',
+  one: 'heart',
+  two: 'ring',
+  three: 'spiral',
+};
 
 function measureHand(points, aspect, previousPose) {
   if (points?.length !== 21) return null;
@@ -21,9 +29,38 @@ function measureHand(points, aspect, previousPose) {
   const curl = previousPose === 'fist' ? 1.18 : 1.10;
   const fist = index < curl && others.every(length => length < curl);
   const open = gap >= AIM_LIMIT && index > 1.27 && others.every(length => length > 1.25);
+
+  const isExtended = (tip, pip) => {
+    const tipDist = distance(0, tip);
+    if (tipDist / palm <= 1.24) return false;
+    const pipDist = distance(0, pip);
+    return pipDist < .001 || tipDist > pipDist * 1.08;
+  };
+  const isCurled = (tip, pip) => {
+    const tipDist = distance(0, tip);
+    if (tipDist / palm >= 1.15) return false;
+    const pipDist = distance(0, pip);
+    return pipDist < .001 || tipDist < pipDist * 1.12;
+  };
+
+  let pose = 'neutral';
+  if (fist) pose = 'fist';
+  else if (open) pose = 'open';
+  else if (gap >= COUNT_MIN_GAP) {
+    const indexExt = isExtended(8, 6);
+    const middleExt = isExtended(12, 10);
+    const ringExt = isExtended(16, 14);
+    const middleCurl = isCurled(12, 10);
+    const ringCurl = isCurled(16, 14);
+    const pinkyCurl = isCurled(20, 18);
+    if (indexExt && middleCurl && ringCurl && pinkyCurl) pose = 'one';
+    else if (indexExt && middleExt && ringCurl && pinkyCurl) pose = 'two';
+    else if (indexExt && middleExt && ringExt && pinkyCurl) pose = 'three';
+  }
+
   return {
     gap,
-    pose: fist ? 'fist' : open ? 'open' : 'neutral',
+    pose,
     canAim: !fist && (index >= 1.07 || others.filter(length => length > 1.25).length >= 2),
     tip: {
       x: Math.max(0, Math.min(1, 1 - (points[4].x + points[8].x) / 2)),
@@ -91,7 +128,7 @@ export function createGestureTracker() {
     }
     if (pose !== poseCandidate && now - poseSince >= POSE_MS) {
       pose = poseCandidate;
-      if (pose !== 'neutral') shape = pose === 'fist' ? 'tree' : 'nebula';
+      shape = POSE_TO_SHAPE[pose];
     }
     if (pose !== 'open' || hand.pose !== 'open') {
       resetMotion();
@@ -166,7 +203,9 @@ export function createGestureTracker() {
         else return moveScene(hand, now);
       }
 
-      if (hand.canAim && hand.gap < AIM_LIMIT) {
+      const isCountPose = hand.pose === 'one' || hand.pose === 'two' || hand.pose === 'three';
+      const aimingActive = phase === 'aim' || phase === 'press';
+      if (hand.canAim && hand.gap < AIM_LIMIT && (!isCountPose || aimingActive)) {
         resetMotion();
         poseCandidate = pose;
         if (hand.gap <= CLOSED) {

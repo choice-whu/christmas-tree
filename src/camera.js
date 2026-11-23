@@ -31,6 +31,10 @@ function loadLibrary() {
   return libraryPromise;
 }
 
+export function preloadCameraLibrary() {
+  return loadLibrary().catch(() => {});
+}
+
 function stopTracks(stream) {
   stream.getTracks().forEach(track => track.stop());
 }
@@ -41,10 +45,10 @@ export function startCamera(video, { signal, onResult, onError }) {
     return Promise.reject(new Error('当前地址无法使用相机。请通过 localhost 或 HTTPS 打开。'));
   }
 
-  // Ask for access while still handling the user's click.
+  // Ask for access while still handling the user's click or startup flow.
   const permission = navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+    video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } },
   });
   let stream;
   let hands;
@@ -94,8 +98,7 @@ export function startCamera(video, { signal, onResult, onError }) {
     frame = requestAnimationFrame(frameLoop);
   }
 
-  const startup = async () => {
-    const [cameraStream, Hands] = await Promise.all([media, loadLibrary()]);
+  const playVideo = media.then(async cameraStream => {
     if (stopped) return;
     cameraStream.getVideoTracks().forEach(track => {
       track.addEventListener('ended', () => {
@@ -104,15 +107,27 @@ export function startCamera(video, { signal, onResult, onError }) {
     });
     video.srcObject = cameraStream;
     await video.play();
+  });
+
+  const initHands = loadLibrary().then(async Hands => {
     if (stopped) return;
-    hands = new Hands({ locateFile: file => PACKAGE_ROOT + file });
-    hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: .55, minTrackingConfidence: .55 });
-    hands.onResults(results => {
+    const instance = new Hands({ locateFile: file => PACKAGE_ROOT + file });
+    instance.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: .55, minTrackingConfidence: .55 });
+    instance.onResults(results => {
       if (!stopped) onResult(results.multiHandLandmarks?.[0] ?? null, performance.now());
     });
-    inFlight = Promise.resolve().then(() => hands.initialize());
-    await inFlight;
-    inFlight = null;
+    hands = instance;
+    const initPromise = Promise.resolve().then(() => instance.initialize());
+    inFlight = initPromise;
+    try {
+      await initPromise;
+    } finally {
+      if (inFlight === initPromise) inFlight = null;
+    }
+  });
+
+  const startup = async () => {
+    await Promise.all([playVideo, initHands]);
     if (!stopped) frame = requestAnimationFrame(frameLoop);
   };
 
