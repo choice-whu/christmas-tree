@@ -154,9 +154,13 @@ button { font: inherit; color: inherit; }
   pointer-events: none;
   box-shadow: 0 0 10px rgb(246 202 130 / 60%);
 }
+.reticle[data-target] .reticle-ring {
+  opacity: .48;
+  transform: scale(1.42);
+}
 .reticle[data-charging] .reticle-ring {
-  opacity: calc(.45 + var(--charge, 0) * .55);
-  transform: scale(calc(1.65 - var(--charge, 0) * .95));
+  opacity: calc(.52 + var(--charge, 0) * .48);
+  transform: scale(calc(1.42 - var(--charge, 0) * .72));
 }
 
 .camera-hud {
@@ -166,16 +170,30 @@ button { font: inherit; color: inherit; }
   bottom: var(--bottom);
   display: flex;
   flex-direction: column;
-  width: 152px;
+  width: 196px;
   border-radius: 14px;
   border: 1px solid rgb(246 202 130 / 28%);
   background: rgb(16 23 33 / 86%);
   backdrop-filter: blur(8px);
   box-shadow: 0 10px 28px rgb(0 0 0 / 42%);
   overflow: hidden;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+.camera-hud[data-mode="holo"] {
+  border-color: rgb(246 202 130 / 38%);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 46%), inset 0 0 18px rgb(246 202 130 / 8%);
 }
 .camera-hud[data-collapsed] { width: auto; max-width: min(72vw, 220px); border-radius: 999px; }
-.camera-preview { position: relative; width: 152px; height: 114px; background: #050910; overflow: hidden; }
+.camera-preview { position: relative; width: 196px; height: 147px; background: #050910; overflow: hidden; }
+.camera-hud[data-mode="holo"] .camera-preview {
+  background:
+    radial-gradient(circle at 50% 48%, rgb(246 202 130 / 10%), transparent 72%),
+    linear-gradient(rgb(246 202 130 / 6%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(246 202 130 / 6%) 1px, transparent 1px),
+    #050912;
+  background-size: 100% 100%, 18px 18px, 18px 18px, 100% 100%;
+  background-position: center, center, center, center;
+}
 .camera-hud[data-collapsed] .camera-preview {
   position: absolute;
   width: 1px;
@@ -185,8 +203,10 @@ button { font: inherit; color: inherit; }
   pointer-events: none;
 }
 #camera-feed, #camera-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
-#camera-feed { transform: scaleX(-1); }
-.camera-bar { display: flex; align-items: center; gap: 7px; padding: 6px 8px 6px 10px; min-height: 32px; }
+#camera-feed { transform: scaleX(-1); transition: opacity 180ms ease; }
+.camera-hud[data-mode="holo"] #camera-feed { opacity: 0; }
+.camera-hud[data-mode="live"] #camera-feed { opacity: 1; }
+.camera-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 10px; min-height: 32px; }
 .camera-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--muted); transition: background-color 140ms, box-shadow 140ms; }
 .camera-dot[data-pose="open"], .camera-dot[data-pose="fist"] { background: #77d49c; box-shadow: 0 0 8px rgb(119 212 156 / 70%); }
 .camera-dot[data-pose="one"] { background: #ff9aa8; box-shadow: 0 0 8px rgb(255 154 168 / 75%); }
@@ -194,6 +214,26 @@ button { font: inherit; color: inherit; }
 .camera-dot[data-pose="three"] { background: #d9b8ff; box-shadow: 0 0 8px rgb(217 184 255 / 75%); }
 .camera-dot[data-pose="aim"], .camera-dot[data-pose="press"], .camera-dot[data-pose="held"] { background: var(--gold); box-shadow: 0 0 8px rgb(246 202 130 / 80%); }
 .camera-badge { flex: 1 1 auto; min-width: 0; font-size: 11.5px; line-height: 1.25; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.camera-mode {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  line-height: 1.25;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgb(246 202 130 / 34%);
+  background: rgb(255 255 255 / 6%);
+  color: var(--gold);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 140ms, border-color 140ms, color 140ms;
+}
+.camera-mode:hover { background: rgb(255 255 255 / 14%); border-color: rgb(246 202 130 / 56%); }
+.camera-hud[data-mode="live"] .camera-mode {
+  border-color: rgb(229 223 211 / 20%);
+  color: var(--muted);
+}
+.camera-hud[data-mode="live"] .camera-mode:hover { color: var(--ink); }
+.camera-hud[data-collapsed] .camera-mode { display: none; }
 .camera-toggle {
   flex: 0 0 auto;
   width: 24px;
@@ -435,8 +475,10 @@ dialog { color: inherit; border: 0; padding: 0; }
 @media (max-width: 620px) {
   .prints { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .studio-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .camera-hud:not([data-collapsed]) { width: 116px; }
-  .camera-preview { width: 116px; height: 87px; }
+  .camera-hud:not([data-collapsed]) { width: 144px; }
+  .camera-preview { width: 144px; height: 108px; }
+  .camera-bar { gap: 4px; padding: 5px 6px 5px 8px; }
+  .camera-mode { font-size: 10px; padding: 1px 5px; }
   .viewer-picture { inset: 70px 14px 82px; }
   .viewer-previous, .viewer-next { top: auto; bottom: var(--bottom); translate: none; }
 }

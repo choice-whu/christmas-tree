@@ -21,6 +21,20 @@ const HAND_BONES = [
   [13, 17], [17, 18], [18, 19], [19, 20],
   [0, 17],
 ];
+const PALM_HULL = [0, 5, 9, 13, 17];
+const FINGER_TIPS = [4, 8, 12, 16, 20];
+const POSE_NEON = {
+  open: { line: '#b5f7cf', glow: 'rgba(119, 212, 156, 0.55)', node: '#e7fff1', palm: 'rgba(119, 212, 156, 0.08)' },
+  fist: { line: '#b5f7cf', glow: 'rgba(119, 212, 156, 0.55)', node: '#e7fff1', palm: 'rgba(119, 212, 156, 0.09)' },
+  one: { line: '#ffc2cc', glow: 'rgba(255, 154, 168, 0.58)', node: '#fff0f3', palm: 'rgba(255, 154, 168, 0.08)' },
+  two: { line: '#bae4ff', glow: 'rgba(142, 208, 255, 0.58)', node: '#eef9ff', palm: 'rgba(142, 208, 255, 0.08)' },
+  three: { line: '#ead4ff', glow: 'rgba(217, 184, 255, 0.58)', node: '#f8f0ff', palm: 'rgba(217, 184, 255, 0.08)' },
+  aim: { line: '#ffe9b2', glow: 'rgba(246, 202, 130, 0.68)', node: '#fff9e6', palm: 'rgba(246, 202, 130, 0.09)' },
+  press: { line: '#fff1be', glow: 'rgba(255, 215, 128, 0.78)', node: '#ffffff', palm: 'rgba(255, 215, 128, 0.11)' },
+  held: { line: '#fff5cf', glow: 'rgba(255, 224, 148, 0.85)', node: '#ffffff', palm: 'rgba(255, 224, 148, 0.12)' },
+  neutral: { line: 'rgba(246, 202, 130, 0.88)', glow: 'rgba(246, 202, 130, 0.45)', node: '#fff4d6', palm: 'rgba(246, 202, 130, 0.07)' },
+  none: { line: 'rgba(246, 202, 130, 0.88)', glow: 'rgba(246, 202, 130, 0.45)', node: '#fff4d6', palm: 'rgba(246, 202, 130, 0.07)' },
+};
 const POSE_LABELS = {
   none: '未检测到手',
   open: '张手 · 星云旋转',
@@ -46,6 +60,7 @@ const reticle = byId('reticle');
 const cameraHud = byId('camera-hud');
 const cameraDot = byId('camera-dot');
 const cameraBadge = byId('camera-badge');
+const cameraModeButton = byId('camera-mode');
 const cameraToggle = byId('camera-toggle');
 const cameraOverlay = byId('camera-overlay');
 const overlayCtx = cameraOverlay?.getContext('2d');
@@ -86,6 +101,7 @@ let scene = null;
 let sceneInitCurrent = true;
 let shape = 'tree';
 let camera = null;
+let lastHandPoints = null;
 let viewer = null;
 let toastTimer;
 let currentMusicSrc = DEFAULT_MUSIC_SRC;
@@ -174,6 +190,7 @@ function openPhoto(id, opener, { bounds = null, pinch = false } = {}) {
   if (index < 0 || viewer) return;
   if (!pinch && camera) stopGesture();
   viewer = { index, opener, pinch, fromStage: Boolean(bounds), flight: null, closing: false, imageRequest: 0 };
+  scene?.setHandTrail(null);
   dialog.dataset.mode = pinch ? 'pinch' : 'manual';
   previous.hidden = next.hidden = pinch;
   scene?.setViewing(true);
@@ -287,25 +304,121 @@ function drawHandOverlay(points, status) {
   const w = cameraOverlay.width;
   const h = cameraOverlay.height;
   overlayCtx.clearRect(0, 0, w, h);
-  if (!points?.length || cameraHud.hasAttribute('data-collapsed')) return;
+  if (cameraHud.hasAttribute('data-collapsed')) return;
 
-  overlayCtx.strokeStyle = 'rgba(246, 202, 130, 0.72)';
-  overlayCtx.lineWidth = 1.5;
-  overlayCtx.beginPath();
-  for (const [a, b] of HAND_BONES) {
-    overlayCtx.moveTo((1 - points[a].x) * w, points[a].y * h);
-    overlayCtx.lineTo((1 - points[b].x) * w, points[b].y * h);
+  if (!points?.length) {
+    if (cameraHud.dataset.mode !== 'live') {
+      const cx = w * 0.5;
+      const cy = h * 0.5;
+      const outerR = Math.min(w, h) * 0.27;
+      const innerR = Math.min(w, h) * 0.14;
+      overlayCtx.save();
+      overlayCtx.strokeStyle = 'rgba(246, 202, 130, 0.16)';
+      overlayCtx.lineWidth = 1.6;
+      overlayCtx.beginPath();
+      overlayCtx.arc(cx, cy, outerR, 0, Math.PI * 2);
+      overlayCtx.moveTo(cx + innerR, cy);
+      overlayCtx.arc(cx, cy, innerR, 0, Math.PI * 2);
+      const tick = 9;
+      overlayCtx.moveTo(cx - outerR - tick * 0.5, cy);
+      overlayCtx.lineTo(cx - outerR + tick * 0.5, cy);
+      overlayCtx.moveTo(cx + outerR - tick * 0.5, cy);
+      overlayCtx.lineTo(cx + outerR + tick * 0.5, cy);
+      overlayCtx.moveTo(cx, cy - outerR - tick * 0.5);
+      overlayCtx.lineTo(cx, cy - outerR + tick * 0.5);
+      overlayCtx.moveTo(cx, cy + outerR - tick * 0.5);
+      overlayCtx.lineTo(cx, cy + outerR + tick * 0.5);
+      overlayCtx.stroke();
+      overlayCtx.restore();
+    }
+    return;
   }
+
+  const palette = POSE_NEON[status] || POSE_NEON.neutral;
+  const highlightTips = status === 'aim' || status === 'press' || status === 'held';
+  const tipSet = new Set(FINGER_TIPS);
+
+  overlayCtx.save();
+  overlayCtx.fillStyle = palette.palm;
+  overlayCtx.beginPath();
+  for (let i = 0; i < PALM_HULL.length; i++) {
+    const pt = points[PALM_HULL[i]];
+    const x = (1 - pt.x) * w;
+    const y = pt.y * h;
+    if (i === 0) overlayCtx.moveTo(x, y);
+    else overlayCtx.lineTo(x, y);
+  }
+  overlayCtx.closePath();
+  overlayCtx.fill();
+
+  overlayCtx.globalCompositeOperation = 'lighter';
+  overlayCtx.lineCap = 'round';
+  overlayCtx.lineJoin = 'round';
+
+  const traceBones = () => {
+    overlayCtx.beginPath();
+    for (const [a, b] of HAND_BONES) {
+      overlayCtx.moveTo((1 - points[a].x) * w, points[a].y * h);
+      overlayCtx.lineTo((1 - points[b].x) * w, points[b].y * h);
+    }
+  };
+  traceBones();
+  overlayCtx.strokeStyle = palette.glow;
+  overlayCtx.lineWidth = 7.5;
   overlayCtx.stroke();
 
-  const highlightTips = status === 'aim' || status === 'press' || status === 'held';
-  for (let i = 0; i < points.length; i++) {
-    const isTip = highlightTips && (i === 4 || i === 8);
-    overlayCtx.fillStyle = isTip ? '#fff1bd' : 'rgba(229, 223, 211, 0.85)';
+  traceBones();
+  overlayCtx.strokeStyle = palette.line;
+  overlayCtx.lineWidth = 2.2;
+  overlayCtx.stroke();
+
+  if (highlightTips) {
+    const tx = (1 - points[4].x) * w;
+    const ty = points[4].y * h;
+    const ix = (1 - points[8].x) * w;
+    const iy = points[8].y * h;
     overlayCtx.beginPath();
-    overlayCtx.arc((1 - points[i].x) * w, points[i].y * h, isTip ? 3.2 : 1.7, 0, Math.PI * 2);
+    overlayCtx.moveTo(tx, ty);
+    overlayCtx.lineTo(ix, iy);
+    overlayCtx.strokeStyle = palette.glow;
+    overlayCtx.lineWidth = 6.2;
+    overlayCtx.stroke();
+    overlayCtx.strokeStyle = '#fff7db';
+    overlayCtx.lineWidth = 2;
+    overlayCtx.stroke();
+
+    const mx = (tx + ix) * 0.5;
+    const my = (ty + iy) * 0.5;
+    overlayCtx.strokeStyle = '#fff5cf';
+    overlayCtx.lineWidth = 1.8;
+    overlayCtx.beginPath();
+    overlayCtx.arc(mx, my, status === 'held' ? 7 : 5.5, 0, Math.PI * 2);
+    overlayCtx.stroke();
+  }
+
+  for (let i = 0; i < points.length; i++) {
+    if (tipSet.has(i)) continue;
+    overlayCtx.fillStyle = palette.line;
+    overlayCtx.beginPath();
+    overlayCtx.arc((1 - points[i].x) * w, points[i].y * h, 2.6, 0, Math.PI * 2);
     overlayCtx.fill();
   }
+
+  for (const tipIndex of FINGER_TIPS) {
+    const x = (1 - points[tipIndex].x) * w;
+    const y = points[tipIndex].y * h;
+    const activePinchTip = highlightTips && (tipIndex === 4 || tipIndex === 8);
+    overlayCtx.fillStyle = palette.glow;
+    overlayCtx.beginPath();
+    overlayCtx.arc(x, y, activePinchTip ? 9.5 : 7.5, 0, Math.PI * 2);
+    overlayCtx.fill();
+
+    overlayCtx.fillStyle = palette.node;
+    overlayCtx.beginPath();
+    overlayCtx.arc(x, y, activePinchTip ? 4.0 : 3.3, 0, Math.PI * 2);
+    overlayCtx.fill();
+  }
+  overlayCtx.restore();
 }
 
 function cameraState(state, message = '') {
@@ -314,11 +427,13 @@ function cameraState(state, message = '') {
   gestureButton.setAttribute('aria-pressed', String(active));
   gestureButton.setAttribute('aria-label', state === 'busy' ? '取消开启手势' : active ? '关闭手势' : '开启手势');
   cameraHud.hidden = !active;
+  if (state !== 'active') lastHandPoints = null;
   if (state === 'busy') {
-    drawHandOverlay(null, 'none');
     setCameraBadge('none', '正在开启摄像头…');
+    drawHandOverlay(null, 'none');
   } else if (state === 'active') {
     setCameraBadge('none', '未检测到手');
+    drawHandOverlay(null, 'none');
   } else {
     drawHandOverlay(null, 'none');
     setCameraBadge('none', '未检测到手');
@@ -326,18 +441,28 @@ function cameraState(state, message = '') {
   announce(gestureMessage, message);
 }
 
+cameraModeButton?.addEventListener('click', () => {
+  const nextMode = cameraHud.dataset.mode === 'live' ? 'holo' : 'live';
+  cameraHud.dataset.mode = nextMode;
+  cameraModeButton.textContent = nextMode === 'holo' ? '全息' : '实景';
+  cameraModeButton.setAttribute('aria-label', nextMode === 'holo' ? '切换到实景摄像头' : '切换到全息骨骼');
+  drawHandOverlay(lastHandPoints, cameraDot.dataset.pose || 'none');
+});
+
 cameraToggle.addEventListener('click', () => {
   const collapsed = cameraHud.toggleAttribute('data-collapsed');
   cameraToggle.setAttribute('aria-expanded', String(!collapsed));
   cameraToggle.setAttribute('aria-label', collapsed ? '展开预览窗' : '收起预览窗');
-  if (collapsed) drawHandOverlay(null, 'none');
+  drawHandOverlay(collapsed ? null : lastHandPoints, cameraDot.dataset.pose || 'none');
 });
 
 function stopGesture(message = '') {
   const session = camera;
   camera = null;
+  lastHandPoints = null;
   session?.controller.abort();
   clearAim();
+  scene?.setHandTrail(null);
   if (viewer?.pinch) closePhoto({ immediate: true });
   cameraState(message ? 'error' : 'idle', message);
   if (message) showToast(message, 4500);
@@ -345,13 +470,14 @@ function stopGesture(message = '') {
 
 function showPose(session, points, now) {
   if (camera !== session || !scene) return;
+  lastHandPoints = points?.length === 21 ? points : null;
   const bounds = mount.getBoundingClientRect();
   const cameraAspect = video.videoWidth / video.videoHeight || 1;
-  const locate = point => {
+  const locate = (point, currentTarget = null) => {
     if (viewer) return null;
     scene.setAiming(true);
-    const range = Math.max(18, Math.min(36, Math.min(bounds.width, bounds.height) * .035));
-    return scene.pick(bounds.left + point.x * bounds.width, bounds.top + point.y * bounds.height, range);
+    const range = Math.max(28, Math.min(54, Math.min(bounds.width, bounds.height) * .055));
+    return scene.pick(bounds.left + point.x * bounds.width, bounds.top + point.y * bounds.height, range, currentTarget);
   };
   const result = session.tracker.update(points, now, cameraAspect, locate);
   drawHandOverlay(points, result.status);
@@ -359,6 +485,7 @@ function showPose(session, points, now) {
 
   if (result.close) closePhoto({ gesture: true });
   if (result.aim && !viewer) {
+    scene.setAiming(true);
     reticle.style.transform = 'translate3d(' + result.aim.x * bounds.width + 'px,' + result.aim.y * bounds.height + 'px,0)';
     reticle.hidden = false;
     reticle.toggleAttribute('data-target', result.target !== null);
@@ -372,6 +499,27 @@ function showPose(session, points, now) {
     scene.setHighlight(result.target);
   } else {
     clearAim();
+  }
+
+  if (points?.length === 21 && !viewer) {
+    let trailX;
+    let trailY;
+    if (result.aim) {
+      trailX = result.aim.x;
+      trailY = result.aim.y;
+    } else if (result.status === 'fist') {
+      const p0 = points[0];
+      const p5 = points[5];
+      const p17 = points[17];
+      trailX = 1 - (p0.x + p5.x + p17.x) / 3;
+      trailY = (p0.y + p5.y + p17.y) / 3;
+    } else {
+      trailX = 1 - points[8].x;
+      trailY = points[8].y;
+    }
+    scene.setHandTrail(trailX, trailY, result.status);
+  } else {
+    scene.setHandTrail(null);
   }
 
   if (viewer) return;

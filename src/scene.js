@@ -2,6 +2,25 @@ const GOLD = 0xffd591;
 const POINTER_SLOP = 7;
 export const SHAPES = ['tree', 'nebula', 'heart', 'ring', 'spiral'];
 const SHAPE_SET = new Set(SHAPES);
+const SHAPE_SHOCK_COLORS = {
+  tree: 0xffd98a,
+  nebula: 0xffc978,
+  heart: 0xff8ea6,
+  ring: 0x9be0ff,
+  spiral: 0xd2adff,
+};
+const TRAIL_TINTS = {
+  open: 0xffdf94,
+  fist: 0xffd788,
+  one: 0xffb8c8,
+  two: 0xb6e3ff,
+  three: 0xe4ccff,
+  aim: 0xffe8ab,
+  press: 0xfff2c2,
+  held: 0xfff7d8,
+  neutral: 0xffe29e,
+};
+const MAX_TRAIL = 160;
 let threePromise = null;
 
 export function preloadSceneEngine() {
@@ -70,13 +89,15 @@ function pointCloud(THREE, fromAttr, targetAttr, colors, sizes, phases, scale) {
       uToSpread: { value: 1 },
       uNebulaMix: { value: 0 },
       uHeartMix: { value: 0 },
+      uRingMix: { value: 0 },
+      uSpiralMix: { value: 0 },
       uTime: { value: 0 },
       uScale: { value: scale },
     },
     vertexShader: [
       'attribute vec3 aTarget; attribute vec3 aTint; attribute float aSize; attribute float aPhase;',
-      'uniform float uMorph; uniform float uFromSpread; uniform float uToSpread; uniform float uNebulaMix; uniform float uHeartMix; uniform float uTime; uniform float uScale;',
-      'varying vec3 vTint; varying float vPulse;',
+      'uniform float uMorph; uniform float uFromSpread; uniform float uToSpread; uniform float uNebulaMix; uniform float uHeartMix; uniform float uRingMix; uniform float uSpiralMix; uniform float uTime; uniform float uScale;',
+      'varying vec3 vTint; varying float vPulse; varying float vSurge;',
       'void main() {',
       '  float stagger = fract(aPhase * 0.15915494 + position.y * 0.085);',
       '  float local = clamp((uMorph - stagger * 0.24) / 0.76, 0.0, 1.0);',
@@ -84,31 +105,38 @@ function pointCloud(THREE, fromAttr, targetAttr, colors, sizes, phases, scale) {
       '  vec3 p0 = position * vec3(uFromSpread, 1.0, uFromSpread);',
       '  vec3 p1 = aTarget * vec3(uToSpread, 1.0, uToSpread);',
       '  vec3 point = mix(p0, p1, t);',
-      '  float swirl = sin(t * 3.14159265) * (0.95 + stagger * 0.55);',
+      '  float surge = sin(t * 3.14159265);',
+      '  float swirl = surge * (0.95 + stagger * 0.55);',
       '  float cs = cos(swirl);',
       '  float sn = sin(swirl);',
       '  point.xz = mat2(cs, -sn, sn, cs) * point.xz;',
-      '  point.y += sin(t * 3.14159265) * 0.16 * (stagger - 0.5);',
+      '  point.y += surge * 0.16 * (stagger - 0.5);',
       '  float shimmer = sin(uTime * 1.2 + aPhase);',
       '  point.x += sin(uTime * .62 + aPhase) * .035 * uNebulaMix;',
       '  vec4 eyePoint = modelViewMatrix * vec4(point, 1.);',
       '  gl_Position = projectionMatrix * eyePoint;',
-      '  gl_PointSize = clamp(aSize * uScale * 14. / -eyePoint.z, 1., 56.);',
-      '  vTint = mix(aTint, vec3(1.0, 0.56, 0.62), uHeartMix * 0.38);',
-      '  vPulse = (.77 + .23 * shimmer) * (1.0 + 0.18 * sin(t * 3.14159265));',
+      '  gl_PointSize = clamp(aSize * uScale * 15.6 / -eyePoint.z, 1.2, 60.);',
+      '  vec3 tint = mix(aTint, vec3(1.0, 0.58, 0.66), uHeartMix * 0.42);',
+      '  tint = mix(tint, vec3(0.76, 0.89, 1.0), uRingMix * 0.28);',
+      '  tint = mix(tint, vec3(0.84, 0.72, 1.0), uSpiralMix * 0.24);',
+      '  vTint = tint;',
+      '  vSurge = surge;',
+      '  vPulse = (.78 + .22 * shimmer) * (1.0 + 0.34 * surge);',
       '}',
     ].join('\n'),
     fragmentShader: [
-      'varying vec3 vTint; varying float vPulse;',
+      'varying vec3 vTint; varying float vPulse; varying float vSurge;',
       'void main() {',
       '  vec2 d = gl_PointCoord * 2.0 - 1.0;',
       '  float d2 = dot(d, d);',
       '  if (d2 > 1.0) discard;',
       '  float inv = 1.0 - d2;',
       '  float inv2 = inv * inv;',
-      '  float halo = inv2 * inv2 * inv;',
-      '  float core = smoothstep(0.09, 0.0036, d2);',
-      '  gl_FragColor = vec4(vTint, (core * 0.84 + halo * 0.48) * vPulse);',
+      '  float aura = inv2 * 0.16;',
+      '  float body = inv2 * inv2 * 0.44;',
+      '  float core = smoothstep(0.065, 0.002, d2);',
+      '  vec3 hotColor = mix(vTint, vec3(1.0, 0.96, 0.86), core * (0.42 + 0.25 * vSurge));',
+      '  gl_FragColor = vec4(hotColor, min((core * 0.88 + body + aura) * vPulse, 1.0));',
       '}',
     ].join('\n'),
     transparent: true,
@@ -212,7 +240,7 @@ function makeTree(THREE, density, pixelRatio) {
       const y = tier.y + .012 + progress * .32 + Math.sin(angle * 2) * .13 + (random() - .5) * .13;
       const bright = random() < .16;
       add(Math.cos(angle) * radius, y, Math.sin(angle) * radius,
-        bright ? 0xffe6b1 : warm[i % warm.length], bright ? 7 + random() * 4.3 : 3.2 + random() * 4);
+        bright ? 0xfff2cc : warm[i % warm.length], bright ? 7 + random() * 4.3 : 3.2 + random() * 4);
     }
   }
 
@@ -262,6 +290,46 @@ function makeStars(THREE, pixelRatio) {
 
 function makeFinial(THREE) {
   const group = new THREE.Group();
+  const haloMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uOpacity: { value: 1 },
+    },
+    vertexShader: [
+      'varying vec2 vUv;',
+      'void main() {',
+      '  vUv = uv;',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+      '}',
+    ].join('\n'),
+    fragmentShader: [
+      'uniform float uTime; uniform float uOpacity;',
+      'varying vec2 vUv;',
+      'void main() {',
+      '  vec2 p = vUv * 2.0 - 1.0;',
+      '  float r = length(p);',
+      '  float edgeMask = smoothstep(0.98, 0.25, r);',
+      '  if (edgeMask <= 0.0) discard;',
+      '  float breath = 0.88 + 0.12 * sin(uTime * 2.1);',
+      '  float radial = exp(-r * 4.6) * 0.72 + exp(-r * 13.0) * 0.65;',
+      '  float hRay = exp(-abs(p.y) * 34.0) * exp(-abs(p.x) * 2.1) * 0.78;',
+      '  float vRay = exp(-abs(p.x) * 38.0) * exp(-abs(p.y) * 2.5) * 0.68;',
+      '  vec2 rot = vec2(p.x + p.y, p.x - p.y) * 0.70710678;',
+      '  float dRay = (exp(-abs(rot.x) * 44.0) + exp(-abs(rot.y) * 44.0)) * exp(-r * 4.8) * 0.28;',
+      '  float glow = (radial + (hRay + vRay + dRay) * breath) * edgeMask * uOpacity;',
+      '  if (glow < 0.002) discard;',
+      '  vec3 col = mix(vec3(1.0, 0.81, 0.44), vec3(1.0, 0.98, 0.90), clamp(exp(-r * 7.5) + (hRay + vRay) * 0.4, 0.0, 1.0));',
+      '  gl_FragColor = vec4(col, min(glow, 1.0));',
+      '}',
+    ].join('\n'),
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 2.7), haloMaterial);
+  halo.position.z = -.02;
+
   const path = new THREE.Shape();
   for (let i = 0; i < 8; i++) {
     const angle = Math.PI / 2 + Math.PI * i / 4;
@@ -272,10 +340,218 @@ function makeFinial(THREE) {
     else path.lineTo(x, y);
   }
   path.closePath();
-  const face = new THREE.Mesh(new THREE.ShapeGeometry(path), new THREE.MeshBasicMaterial({ color: 0xffe9b5, side: THREE.DoubleSide, transparent: true }));
-  group.add(face);
+  const face = new THREE.Mesh(
+    new THREE.ShapeGeometry(path),
+    new THREE.MeshBasicMaterial({ color: 0xfff6d8, side: THREE.DoubleSide, transparent: true, depthWrite: false })
+  );
+  group.add(halo, face);
   group.position.set(0, 3.53, .15);
-  return group;
+  return { group, halo, face };
+}
+
+function makeSnow(THREE, compact, pixelRatio) {
+  const random = randomSequence(91423);
+  const count = compact ? 220 : 360;
+  const positions = new Float32Array(count * 3);
+  const speeds = new Float32Array(count);
+  const phases = new Float32Array(count);
+  const sizes = new Float32Array(count);
+  const colors = new Float32Array(count * 3);
+  const gold = new THREE.Color(0xffd996);
+  const ice = new THREE.Color(0xd9ebff);
+  const moon = new THREE.Color(0xf2f6ff);
+
+  for (let i = 0; i < count; i++) {
+    const i3 = i * 3;
+    positions[i3] = (random() - .5) * 19;
+    positions[i3 + 1] = (random() - .5) * 13;
+    positions[i3 + 2] = -5.8 + random() * 11;
+    speeds[i] = .28 + random() * .58;
+    phases[i] = random() * Math.PI * 2;
+    sizes[i] = 2.2 + Math.pow(random(), 2.2) * 5.6;
+    const tone = random();
+    const tint = tone < .25 ? gold : tone < .6 ? ice : moon;
+    colors[i3] = tint.r;
+    colors[i3 + 1] = tint.g;
+    colors[i3 + 2] = tint.b;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('aSpeed', new THREE.Float32BufferAttribute(speeds, 1));
+  geometry.setAttribute('aPhase', new THREE.Float32BufferAttribute(phases, 1));
+  geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
+  geometry.setAttribute('aTint', new THREE.Float32BufferAttribute(colors, 3));
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uScale: { value: pixelRatio },
+    },
+    vertexShader: [
+      'attribute float aSpeed; attribute float aPhase; attribute float aSize; attribute vec3 aTint;',
+      'uniform float uTime; uniform float uScale;',
+      'varying vec3 vTint; varying float vAlpha; varying float vSoftness;',
+      'void main() {',
+      '  vec3 pos = position;',
+      '  pos.y = mod(pos.y - uTime * aSpeed + 6.5, 13.0) - 6.5;',
+      '  float sway = uTime * (0.45 + aSpeed * 0.35) + aPhase;',
+      '  pos.x += sin(sway) * 0.28 + cos(sway * 0.53) * 0.14;',
+      '  pos.z += cos(sway * 0.7) * 0.16;',
+      '  float edgeFade = smoothstep(-6.5, -5.2, pos.y) * smoothstep(6.5, 5.2, pos.y);',
+      '  float depthNorm = clamp((pos.z + 5.8) / 11.0, 0.0, 1.0);',
+      '  vec4 eyePoint = modelViewMatrix * vec4(pos, 1.0);',
+      '  gl_Position = projectionMatrix * eyePoint;',
+      '  gl_PointSize = clamp(aSize * uScale * 13.5 / max(-eyePoint.z, 2.5), 1.5, 38.0);',
+      '  vTint = aTint;',
+      '  vSoftness = mix(0.25, 0.85, depthNorm);',
+      '  vAlpha = edgeFade * (0.28 + 0.36 * depthNorm);',
+      '}',
+    ].join('\n'),
+    fragmentShader: [
+      'varying vec3 vTint; varying float vAlpha; varying float vSoftness;',
+      'void main() {',
+      '  vec2 d = gl_PointCoord * 2.0 - 1.0;',
+      '  float d2 = dot(d, d);',
+      '  if (d2 > 1.0) discard;',
+      '  float inv = 1.0 - d2;',
+      '  float softBokeh = inv * inv * (0.48 + 0.34 * inv);',
+      '  float crispDot = smoothstep(0.32, 0.02, d2) * 0.55 + inv * inv * 0.45;',
+      '  float shape = mix(crispDot, softBokeh, vSoftness);',
+      '  gl_FragColor = vec4(vTint, shape * vAlpha);',
+      '}',
+    ].join('\n'),
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+  return points;
+}
+
+function makeShockwave(THREE) {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uProgress: { value: 1 },
+      uColor: { value: new THREE.Color(GOLD) },
+      uTime: { value: 0 },
+    },
+    vertexShader: [
+      'varying vec2 vUv;',
+      'void main() {',
+      '  vUv = uv;',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+      '}',
+    ].join('\n'),
+    fragmentShader: [
+      'uniform float uProgress; uniform vec3 uColor; uniform float uTime;',
+      'varying vec2 vUv;',
+      'void main() {',
+      '  vec2 p = vUv * 2.0 - 1.0;',
+      '  float r = length(p);',
+      '  float edgeMask = smoothstep(0.98, 0.78, r);',
+      '  if (edgeMask <= 0.0) discard;',
+      '  float m = 1.0 - uProgress;',
+      '  float ease = 1.0 - m * m * m;',
+      '  float ringR = mix(0.08, 0.86, ease);',
+      '  float dr = r - ringR;',
+      '  float mainRing = exp(-dr * dr * 920.0);',
+      '  float wakeDist = max(0.0, ringR - r);',
+      '  float wake = step(r, ringR) * exp(-wakeDist * 26.0) * 0.26;',
+      '  float ang = atan(p.y, p.x);',
+      '  float shimmer = 0.56 + 0.44 * (0.5 + 0.5 * sin(ang * 14.0 + uTime * 5.0) * cos(ang * 6.0 - uTime * 3.0));',
+      '  float flash = exp(-r * 7.5) * smoothstep(0.24, 0.0, uProgress) * 0.52;',
+      '  float lifeFade = smoothstep(0.0, 0.07, uProgress) * smoothstep(0.92, 0.22, uProgress);',
+      '  float alpha = ((mainRing * 0.95 + wake) * shimmer * lifeFade + flash * smoothstep(0.0, 0.03, uProgress)) * edgeMask;',
+      '  if (alpha < 0.002) discard;',
+      '  vec3 col = mix(uColor * 1.15, vec3(1.0, 0.97, 0.90), clamp(mainRing * 0.55 + flash, 0.0, 1.0));',
+      '  gl_FragColor = vec4(col, min(alpha * 0.86, 1.0));',
+      '}',
+    ].join('\n'),
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(12.2, 12.2), material);
+  mesh.position.set(0, 0, .25);
+  mesh.visible = false;
+  mesh.frustumCulled = false;
+  return mesh;
+}
+
+function makeHandTrail(THREE, pixelRatio) {
+  const positions = new Float32Array(MAX_TRAIL * 3);
+  const velocities = new Float32Array(MAX_TRAIL * 2);
+  const meta = new Float32Array(MAX_TRAIL * 3);
+  const tints = new Float32Array(MAX_TRAIL * 3);
+  const geometry = new THREE.BufferGeometry();
+  const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+  const velAttr = new THREE.Float32BufferAttribute(velocities, 2);
+  const metaAttr = new THREE.Float32BufferAttribute(meta, 3);
+  const tintAttr = new THREE.Float32BufferAttribute(tints, 3);
+  geometry.setAttribute('position', posAttr);
+  geometry.setAttribute('aVelocity', velAttr);
+  geometry.setAttribute('aMeta', metaAttr);
+  geometry.setAttribute('aTint', tintAttr);
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uScale: { value: pixelRatio },
+      uAspect: { value: 1 },
+    },
+    vertexShader: [
+      'attribute vec2 aVelocity; attribute vec3 aMeta; attribute vec3 aTint;',
+      'uniform float uTime; uniform float uScale; uniform float uAspect;',
+      'varying vec3 vTint; varying float vAlpha;',
+      'void main() {',
+      '  float life = aMeta.y;',
+      '  float age = uTime - aMeta.x;',
+      '  if (life <= 0.0 || age < 0.0 || age >= life) {',
+      '    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);',
+      '    gl_PointSize = 0.0;',
+      '    vAlpha = 0.0;',
+      '    vTint = aTint;',
+      '    return;',
+      '  }',
+      '  float t = age / life;',
+      '  vec2 drift = vec2(aVelocity.x / max(uAspect, 0.5), aVelocity.y);',
+      '  vec2 ndc = position.xy + drift * age;',
+      '  ndc.y += 0.055 * age * age;',
+      '  gl_Position = vec4(ndc, 0.0, 1.0);',
+      '  gl_PointSize = clamp(aMeta.z * uScale * (1.0 - t * 0.45), 1.5, 36.0);',
+      '  float fadeIn = smoothstep(0.0, 0.08, t);',
+      '  float fadeOut = 1.0 - t;',
+      '  vAlpha = fadeIn * pow(fadeOut, 1.45);',
+      '  vTint = aTint;',
+      '}',
+    ].join('\n'),
+    fragmentShader: [
+      'varying vec3 vTint; varying float vAlpha;',
+      'void main() {',
+      '  if (vAlpha <= 0.002) discard;',
+      '  vec2 d = gl_PointCoord * 2.0 - 1.0;',
+      '  float d2 = dot(d, d);',
+      '  if (d2 > 1.0) discard;',
+      '  float inv = 1.0 - d2;',
+      '  float inv2 = inv * inv;',
+      '  float core = smoothstep(0.18, 0.008, d2);',
+      '  float halo = inv2 * inv2 * 0.78;',
+      '  vec3 col = mix(vTint * 1.15, vec3(1.0, 0.99, 0.92), core * 0.78);',
+      '  gl_FragColor = vec4(col, min((core + halo) * vAlpha, 1.0));',
+      '}',
+    ].join('\n'),
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false;
+  points.renderOrder = 20;
+  return { points, posAttr, velAttr, metaAttr, tintAttr };
 }
 
 const FRONT_POSITIONS = [
@@ -361,9 +637,12 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
   scene.add(root);
   const { points: treePoints, shapeAttrs, scratchAttr, total: particleCount } = makeTree(THREE, compact ? .50 : .72, pixelRatio);
   const stars = makeStars(THREE, pixelRatio);
-  const finial = makeFinial(THREE);
+  const { group: finial, halo: finialHalo, face: finialFace } = makeFinial(THREE);
+  const snow = makeSnow(THREE, compact, pixelRatio);
+  const shockwave = makeShockwave(THREE);
+  const handTrail = makeHandTrail(THREE, pixelRatio);
   root.add(treePoints, finial);
-  scene.add(stars);
+  scene.add(stars, snow, shockwave, handTrail.points);
   const photoPlane = new THREE.PlaneGeometry(1, 1);
   const raycaster = new THREE.Raycaster();
   const coordinates = new THREE.Vector2();
@@ -391,6 +670,7 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
   let fromShape = 'tree';
   let toShape = 'tree';
   let morphProgress = 1;
+  let shockProgress = 1;
   let customCamDistance = 14.25;
   let customCamY = -.14;
   let aiming = false;
@@ -412,6 +692,12 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
   let viewing = false;
   let floatingPhoto = null;
   let nebulaSpread = 1;
+  const trailInk = new THREE.Color(GOLD);
+  const trailRandom = randomSequence(55213);
+  let trailCursor = 0;
+  let handTarget = null;
+  let handCursor = null;
+  let lastTrailSpawn = -1;
 
   function resize() {
     const width = mount.clientWidth;
@@ -419,6 +705,7 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
     if (!width || !height || disposed) return;
     camera.aspect = width / height;
     nebulaSpread = THREE.MathUtils.clamp(camera.aspect / .97, .68, 1);
+    handTrail.points.material.uniforms.uAspect.value = camera.aspect;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
     dirty = true;
@@ -573,12 +860,111 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
       entry.border.material.opacity = isHot ? 1 : opacity * .79;
       if (isHot !== entry.hotTint) {
         entry.hotTint = isHot;
-        entry.border.material.color.setHex(isHot ? 0xfff4cc : GOLD);
+        entry.border.material.color.setHex(isHot ? 0xfff8dc : GOLD);
       }
-      const targetScale = isPinchHot ? 1.20 : isHoverHot ? 1.13 : 1;
+      const targetScale = isPinchHot ? 1.24 : isHoverHot ? 1.13 : 1;
       entry.scale = THREE.MathUtils.lerp(entry.scale, targetScale, scaleAlpha);
       if (Math.abs(entry.scale - targetScale) < .002) entry.scale = targetScale;
       entry.holder.scale.setScalar(entry.scale);
+    }
+  }
+
+  function emitTrailSpark(x, y, vx, vy, size, life) {
+    const idx = trailCursor;
+    trailCursor = (trailCursor + 1) % MAX_TRAIL;
+    const i2 = idx * 2;
+    const i3 = idx * 3;
+    const posArr = handTrail.posAttr.array;
+    const velArr = handTrail.velAttr.array;
+    const metaArr = handTrail.metaAttr.array;
+    const tintArr = handTrail.tintAttr.array;
+    posArr[i3] = x;
+    posArr[i3 + 1] = y;
+    posArr[i3 + 2] = 0;
+    velArr[i2] = vx;
+    velArr[i2 + 1] = vy;
+    metaArr[i3] = elapsed;
+    metaArr[i3 + 1] = life;
+    metaArr[i3 + 2] = size;
+    tintArr[i3] = trailInk.r;
+    tintArr[i3 + 1] = trailInk.g;
+    tintArr[i3 + 2] = trailInk.b;
+  }
+
+  function updateHandTrail(dt) {
+    handTrail.points.visible = !reducedMotion && !viewing;
+    handTrail.points.material.uniforms.uTime.value = elapsed;
+    if (reducedMotion || viewing || !handTarget) return;
+    let spawned = false;
+    if (!handCursor) {
+      handCursor = { x: handTarget.x, y: handTarget.y };
+      for (let i = 0; i < 5; i++) {
+        const ang = trailRandom() * Math.PI * 2;
+        const spd = .04 + trailRandom() * .11;
+        emitTrailSpark(
+          handCursor.x + (trailRandom() - .5) * .020,
+          handCursor.y + (trailRandom() - .5) * .026,
+          Math.cos(ang) * spd,
+          Math.sin(ang) * spd + .04,
+          8 + trailRandom() * 8.5,
+          .72 + trailRandom() * .42
+        );
+      }
+      spawned = true;
+      lastTrailSpawn = elapsed;
+    } else {
+      const prevX = handCursor.x;
+      const prevY = handCursor.y;
+      const follow = dt > 0 ? 1 - Math.exp(-dt / .045) : 1;
+      handCursor.x += (handTarget.x - handCursor.x) * follow;
+      handCursor.y += (handTarget.y - handCursor.y) * follow;
+      const dx = handCursor.x - prevX;
+      const dy = handCursor.y - prevY;
+      const dist = Math.hypot(dx * camera.aspect, dy);
+      if (dist > .006) {
+        const count = Math.min(8, Math.max(3, Math.round(dist * 45)));
+        const invLen = 1 / Math.max(dist, .0001);
+        const nx = -dy * invLen;
+        const ny = dx * invLen;
+        for (let i = 1; i <= count; i++) {
+          const f = i / count;
+          const jitter = (trailRandom() - .5) * .018;
+          const ang = trailRandom() * Math.PI * 2;
+          const spd = .035 + trailRandom() * .11;
+          emitTrailSpark(
+            prevX + dx * f + nx * jitter,
+            prevY + dy * f + ny * jitter,
+            Math.cos(ang) * spd - dx * .18,
+            Math.sin(ang) * spd - dy * .18 + .045,
+            9 + trailRandom() * 10,
+            .78 + trailRandom() * .44
+          );
+        }
+        // Bright leading fingertip flare at current cursor position
+        emitTrailSpark(handCursor.x, handCursor.y, 0, .01, 22, .16);
+        spawned = true;
+        lastTrailSpawn = elapsed;
+      } else if (elapsed - lastTrailSpawn >= .028 || elapsed < lastTrailSpawn) {
+        const ang = trailRandom() * Math.PI * 2;
+        const spd = .025 + trailRandom() * .07;
+        emitTrailSpark(
+          handCursor.x + (trailRandom() - .5) * .016,
+          handCursor.y + (trailRandom() - .5) * .020,
+          Math.cos(ang) * spd,
+          Math.sin(ang) * spd + .04,
+          8.5 + trailRandom() * 8.5,
+          .72 + trailRandom() * .38
+        );
+        emitTrailSpark(handCursor.x, handCursor.y, 0, .01, 20, .14);
+        spawned = true;
+        lastTrailSpawn = elapsed;
+      }
+    }
+    if (spawned) {
+      handTrail.posAttr.needsUpdate = true;
+      handTrail.velAttr.needsUpdate = true;
+      handTrail.metaAttr.needsUpdate = true;
+      handTrail.tintAttr.needsUpdate = true;
     }
   }
 
@@ -636,15 +1022,31 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
     uniforms.uToSpread.value = toShape === 'nebula' ? nebulaSpread : 1;
     uniforms.uNebulaMix.value = (fromShape === 'nebula' ? 1 - eased : 0) + (toShape === 'nebula' ? eased : 0);
     uniforms.uHeartMix.value = (fromShape === 'heart' ? 1 - eased : 0) + (toShape === 'heart' ? eased : 0);
+    uniforms.uRingMix.value = (fromShape === 'ring' ? 1 - eased : 0) + (toShape === 'ring' ? eased : 0);
+    uniforms.uSpiralMix.value = (fromShape === 'spiral' ? 1 - eased : 0) + (toShape === 'spiral' ? eased : 0);
     uniforms.uTime.value = elapsed;
     stars.material.uniforms.uTime.value = elapsed * .58;
+    snow.material.uniforms.uTime.value = elapsed;
+
+    if (!reducedMotion && !viewing && shockProgress < 1) {
+      shockProgress = Math.min(1, shockProgress + dt / .85);
+    }
+    const showShock = !reducedMotion && shockProgress < 1;
+    shockwave.visible = showShock;
+    if (showShock) {
+      shockwave.material.uniforms.uProgress.value = shockProgress;
+      shockwave.material.uniforms.uTime.value = elapsed;
+    }
 
     const treeWeight = (fromShape === 'tree' ? 1 - eased : 0) + (toShape === 'tree' ? eased : 0);
-    finial.visible = treeWeight > .06;
-    finial.children[0].material.opacity = treeWeight;
+    finial.visible = treeWeight > .04;
+    finialHalo.material.uniforms.uTime.value = elapsed;
+    finialHalo.material.uniforms.uOpacity.value = treeWeight;
+    finialFace.material.opacity = treeWeight;
     finial.quaternion.copy(root.quaternion).invert();
-    if (!reducedMotion) finial.scale.setScalar(1 + Math.sin(elapsed * 1.8) * .048);
+    if (!reducedMotion) finial.scale.setScalar(1 + Math.sin(elapsed * 1.8) * .052);
     updatePhotos(dt);
+    updateHandTrail(dt);
     renderer.render(scene, camera);
   }
 
@@ -666,6 +1068,8 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
             renderer.setPixelRatio(pixelRatio);
             treePoints.material.uniforms.uScale.value = pixelRatio;
             stars.material.uniforms.uScale.value = pixelRatio;
+            snow.material.uniforms.uScale.value = pixelRatio;
+            handTrail.points.material.uniforms.uScale.value = pixelRatio;
             resize();
           }
         }
@@ -714,29 +1118,51 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
     dirty = true;
   }
 
-  function pick(clientX, clientY, range = compact ? 19 : 12) {
+  function pick(clientX, clientY, range = compact ? 19 : 12, preferredId = null) {
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
     coordinates.set((clientX - rect.left) / rect.width * 2 - 1, 1 - (clientY - rect.top) / rect.height * 2);
     raycaster.setFromCamera(coordinates, camera);
     const meshes = Array.from(data.values(), entry => entry.mesh).filter(mesh => mesh.parent.visible);
     return raycaster.intersectObjects(meshes)[0]?.object.userData.photoId
-      ?? photoNear(clientX, clientY, range, rect);
+      ?? photoNear(clientX, clientY, range, rect, preferredId);
   }
 
-  function photoNear(clientX, clientY, range, rect) {
+  function photoNear(clientX, clientY, range, rect, preferredId = null) {
     let bestScore = Infinity;
     let bestId = null;
     for (const entry of data.values()) {
       if (!entry.holder.visible) continue;
+      entry.mesh.updateWorldMatrix(true, false);
       world.copy(entry.holder.position).applyMatrix4(root.matrixWorld);
+      const depthZ = world.z;
       projected.copy(world).project(camera);
       if (projected.z > 1 || projected.z < -1) continue;
-      const x = rect.left + (projected.x + 1) * rect.width / 2;
-      const y = rect.top + (1 - projected.y) * rect.height / 2;
-      const distance = Math.hypot(x - clientX, y - clientY);
-      if (distance > range) continue;
-      const score = distance + Math.max(0, 1.1 - world.z) * 3.5;
+      const cx = rect.left + (projected.x + 1) * rect.width / 2;
+      const cy = rect.top + (1 - projected.y) * rect.height / 2;
+
+      world.set(.5, 0, 0).applyMatrix4(entry.mesh.matrixWorld);
+      projected.copy(world).project(camera);
+      const halfW = Math.hypot(
+        rect.left + (projected.x + 1) * rect.width / 2 - cx,
+        rect.top + (1 - projected.y) * rect.height / 2 - cy
+      );
+
+      world.set(0, .5, 0).applyMatrix4(entry.mesh.matrixWorld);
+      projected.copy(world).project(camera);
+      const halfH = Math.hypot(
+        rect.left + (projected.x + 1) * rect.width / 2 - cx,
+        rect.top + (1 - projected.y) * rect.height / 2 - cy
+      );
+
+      const edgeDist = Math.hypot(
+        Math.max(0, Math.abs(clientX - cx) - halfW),
+        Math.max(0, Math.abs(clientY - cy) - halfH)
+      );
+      const limit = entry.id === preferredId ? range * 1.45 : range;
+      if (edgeDist > limit) continue;
+      const stickyBonus = entry.id === preferredId ? -14 : 0;
+      const score = edgeDist + Math.max(0, 1.1 - depthZ) * 3.5 + stickyBonus;
       if (score < bestScore) {
         bestScore = score;
         bestId = entry.id;
@@ -1000,6 +1426,22 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
       highlight = id;
       dirty = true;
     },
+    setHandTrail(nx, ny, pose = 'neutral') {
+      if (nx == null || ny == null || !Number.isFinite(nx) || !Number.isFinite(ny)) {
+        handTarget = null;
+        handCursor = null;
+        return;
+      }
+      const ndcX = nx * 2 - 1;
+      const ndcY = 1 - ny * 2;
+      if (!handTarget) handTarget = { x: ndcX, y: ndcY };
+      else {
+        handTarget.x = ndcX;
+        handTarget.y = ndcY;
+      }
+      trailInk.setHex(TRAIL_TINTS[pose] || TRAIL_TINTS.neutral);
+      dirty = true;
+    },
     setReducedMotion(value) { reducedMotion = value; dirty = true; },
     setRunning,
     setShape(nextShape) {
@@ -1066,6 +1508,10 @@ function createScene(THREE, { mount, photos, reducedMotion, onPhoto, onFailure }
       }
 
       morphProgress = reducedMotion ? 1 : 0;
+      if (!reducedMotion) {
+        shockProgress = 0;
+        shockwave.material.uniforms.uColor.value.setHex(SHAPE_SHOCK_COLORS[nextShape] || GOLD);
+      }
       dirty = true;
       if (!running) draw(0);
     },

@@ -5,10 +5,17 @@ const TARGET_MS = 85;
 const HOLD_MS = 120;
 const RELEASE_MS = 80;
 const QUIET_MS = 260;
-const CLOSED = .30;
-const RELEASED = .48;
-const AIM_LIMIT = .82;
-const COUNT_MIN_GAP = .58;
+const CLOSED = .36;
+const RELEASED = .50;
+const AIM_ENTER = .80;
+const AIM_EXIT = .90;
+const AIM_EXIT_MS = 90;
+const FREEZE_GAP = .46;
+const ONE_MIN_GAP = .68;
+const TWO_MIN_GAP = .58;
+const THREE_MIN_GAP = .55;
+const WAY_B_MAX_GAP = .32;
+const TARGET_GRACE_MS = 75;
 const POSE_TO_SHAPE = {
   fist: 'tree',
   open: 'nebula',
@@ -17,51 +24,100 @@ const POSE_TO_SHAPE = {
   three: 'spiral',
 };
 
-function measureHand(points, aspect, previousPose) {
+function measureHand(points, aspect, previousPose, isPinching = false) {
   if (points?.length !== 21) return null;
   const distance = (a, b) => Math.hypot((points[a].x - points[b].x) * aspect, points[a].y - points[b].y);
-  const palm = distance(0, 9);
+  const palm = Math.max(distance(0, 9), distance(5, 17) * 1.15);
   if (palm < .012) return null;
 
   const gap = distance(4, 8) / palm;
   const index = distance(0, 8) / palm;
   const others = [12, 16, 20].map(tip => distance(0, tip) / palm);
   const curl = previousPose === 'fist' ? 1.18 : 1.10;
-  const fist = index < curl && others.every(length => length < curl);
-  const open = gap >= AIM_LIMIT && index > 1.27 && others.every(length => length > 1.25);
+  const hasAnyJoints = distance(0, 6) >= .001 && distance(5, 6) >= .001;
 
-  const isExtended = (tip, pip) => {
-    const tipDist = distance(0, tip);
-    if (tipDist / palm <= 1.24) return false;
-    const pipDist = distance(0, pip);
-    return pipDist < .001 || tipDist > pipDist * 1.08;
+  const jointCos = (mcp, pip, tip) => {
+    const v1x = (points[pip].x - points[mcp].x) * aspect;
+    const v1y = points[pip].y - points[mcp].y;
+    const v2x = (points[tip].x - points[pip].x) * aspect;
+    const v2y = points[tip].y - points[pip].y;
+    const n1 = Math.hypot(v1x, v1y);
+    const n2 = Math.hypot(v2x, v2y);
+    if (n1 < .001 || n2 < .001) return 0;
+    return (v1x * v2x + v1y * v2y) / (n1 * n2);
   };
-  const isCurled = (tip, pip) => {
+
+  const isExtended = (tip, pip, mcp) => {
     const tipDist = distance(0, tip);
-    if (tipDist / palm >= 1.15) return false;
     const pipDist = distance(0, pip);
-    return pipDist < .001 || tipDist < pipDist * 1.12;
+    const mcpPipDist = distance(mcp, pip);
+    const hasJoints = pipDist >= .001 && mcpPipDist >= .001;
+    if (!hasJoints) return tipDist / palm > 1.24;
+    return tipDist / palm > 1.22 && tipDist > pipDist * 1.12 && jointCos(mcp, pip, tip) > .35;
   };
+
+  const isCurled = (tip, pip, mcp) => {
+    const tipDist = distance(0, tip);
+    const pipDist = distance(0, pip);
+    const mcpPipDist = distance(mcp, pip);
+    const hasJoints = pipDist >= .001 && mcpPipDist >= .001;
+    if (!hasJoints) return tipDist / palm < 1.15;
+    if (tipDist / palm < 1.16) return true;
+    const cos = jointCos(mcp, pip, tip);
+    return tipDist / palm < 1.38 && (tipDist <= pipDist * 1.10 || cos <= .32);
+  };
+
+  const isTightCurled = (tip, pip, mcp) => {
+    const tipDist = distance(0, tip);
+    const pipDist = distance(0, pip);
+    const mcpPipDist = distance(mcp, pip);
+    const hasJoints = pipDist >= .001 && mcpPipDist >= .001;
+    if (!hasJoints) return tipDist / palm < curl;
+    return tipDist / palm < 1.12 || (tipDist <= pipDist * 1.02 && jointCos(mcp, pip, tip) < .05 && tipDist / palm < 1.30);
+  };
+
+  const indexExt = isExtended(8, 6, 5);
+  const middleExt = isExtended(12, 10, 9);
+  const ringExt = isExtended(16, 14, 13);
+  const pinkyExt = isExtended(20, 18, 17);
+  const indexCurl = isCurled(8, 6, 5);
+  const middleCurl = isCurled(12, 10, 9);
+  const ringCurl = isCurled(16, 14, 13);
+  const pinkyCurl = isCurled(20, 18, 17);
+  const indexTight = isTightCurled(8, 6, 5);
+  const middleTight = isTightCurled(12, 10, 9);
+  const ringTight = isTightCurled(16, 14, 13);
+  const pinkyTight = isTightCurled(20, 18, 17);
+
+  let fist;
+  if (!hasAnyJoints) {
+    fist = index < curl && others.every(length => length < curl);
+  } else if (previousPose === 'fist') {
+    fist = !indexExt && !middleExt && !ringExt && !pinkyExt && indexCurl && middleCurl && ringCurl && pinkyCurl;
+  } else if (isPinching) {
+    fist = index < 1.12 && indexTight && middleTight && ringTight && pinkyTight;
+  } else {
+    fist = indexTight && middleTight && ringTight && pinkyTight && others.every(length => length < 1.26);
+  }
+
+  const openLimit = previousPose === 'open' ? AIM_ENTER : AIM_EXIT;
+  const open = gap >= openLimit && indexExt && middleExt && ringExt && pinkyExt;
+  const straightOuterThree = hasAnyJoints
+    ? jointCos(9, 10, 12) > .50 && jointCos(13, 14, 16) > .50 && jointCos(17, 18, 20) > .50
+    : true;
 
   let pose = 'neutral';
   if (fist) pose = 'fist';
   else if (open) pose = 'open';
-  else if (gap >= COUNT_MIN_GAP) {
-    const indexExt = isExtended(8, 6);
-    const middleExt = isExtended(12, 10);
-    const ringExt = isExtended(16, 14);
-    const middleCurl = isCurled(12, 10);
-    const ringCurl = isCurled(16, 14);
-    const pinkyCurl = isCurled(20, 18);
-    if (indexExt && middleCurl && ringCurl && pinkyCurl) pose = 'one';
-    else if (indexExt && middleExt && ringCurl && pinkyCurl) pose = 'two';
-    else if (indexExt && middleExt && ringExt && pinkyCurl) pose = 'three';
-  }
+  else if (gap >= ONE_MIN_GAP && indexExt && middleCurl && ringCurl && pinkyCurl) pose = 'one';
+  else if (gap >= TWO_MIN_GAP && indexExt && middleExt && ringCurl && pinkyCurl) pose = 'two';
+  else if (gap >= THREE_MIN_GAP && indexExt && middleExt && ringExt && !pinkyExt && (pinkyCurl || (previousPose === 'three' && distance(0, 20) / palm < 1.40))) pose = 'three';
+  else if (gap <= WAY_B_MAX_GAP && !indexExt && middleExt && ringExt && pinkyExt && straightOuterThree && (indexCurl || !hasAnyJoints || index < 1.32)) pose = 'three';
 
   return {
     gap,
     pose,
-    canAim: !fist && (index >= 1.07 || others.filter(length => length > 1.25).length >= 2),
+    canAim: !fist && (index >= 1.02 || others.filter(length => length > 1.25).length >= 2),
     tip: {
       x: Math.max(0, Math.min(1, 1 - (points[4].x + points[8].x) / 2)),
       y: Math.max(0, Math.min(1, (points[4].y + points[8].y) / 2)),
@@ -88,6 +144,8 @@ export function createGestureTracker() {
   let tipTime = 0;
   let target = null;
   let targetSince = 0;
+  let missSince = null;
+  let aimExitSince = null;
   let pressSince = 0;
   let releaseSince = null;
 
@@ -101,6 +159,8 @@ export function createGestureTracker() {
     phase = nextPhase;
     tip = null;
     target = null;
+    missSince = null;
+    aimExitSince = null;
     releaseSince = null;
   }
 
@@ -150,7 +210,8 @@ export function createGestureTracker() {
       phase = 'blocked';
     },
     update(points, now, aspect, locate) {
-      const hand = measureHand(points, aspect, pose);
+      const isPinching = phase === 'aim' || phase === 'press' || phase === 'held';
+      const hand = measureHand(points, aspect, pose, isPinching);
       if (!hand) {
         resetMotion();
         poseCandidate = pose;
@@ -186,7 +247,7 @@ export function createGestureTracker() {
 
       if (phase === 'press') {
         if (hand.gap >= RELEASED) resetAim();
-        else if (!hand.canAim) resetAim('blocked');
+        else if (hand.pose === 'fist') resetAim('blocked');
         else {
           if (pressSince === null) pressSince = now;
           const elapsed = now - pressSince;
@@ -203,9 +264,23 @@ export function createGestureTracker() {
         else return moveScene(hand, now);
       }
 
+      const isWayB = hand.pose === 'three' && hand.gap <= WAY_B_MAX_GAP;
       const isCountPose = hand.pose === 'one' || hand.pose === 'two' || hand.pose === 'three';
-      const aimingActive = phase === 'aim' || phase === 'press';
-      if (hand.canAim && hand.gap < AIM_LIMIT && (!isCountPose || aimingActive)) {
+      const lockAim = phase === 'press' || (phase === 'aim' && target !== null && (hand.gap < .72 || isWayB));
+      const inAimBand = phase === 'aim' ? hand.gap < AIM_EXIT : hand.gap < AIM_ENTER;
+
+      if (phase === 'aim' && hand.canAim && !isCountPose && hand.gap >= AIM_EXIT) {
+        if (aimExitSince === null) aimExitSince = now;
+        if (now - aimExitSince < AIM_EXIT_MS) {
+          resetMotion();
+          locate(tip, target);
+          return { aim: tip, target, status: 'aim', pressProgress: 0 };
+        }
+      } else if (inAimBand) {
+        aimExitSince = null;
+      }
+
+      if (hand.canAim && inAimBand && (!isCountPose || lockAim)) {
         resetMotion();
         poseCandidate = pose;
         if (hand.gap <= CLOSED) {
@@ -215,18 +290,39 @@ export function createGestureTracker() {
             return { aim: tip, target, status: 'press', pressProgress: 0 };
           }
           resetAim('blocked');
+          if (hand.pose === 'three') return moveScene(hand, now);
           return { status: hand.pose, pressProgress: 0 };
         }
-        const mix = tip ? 1 - Math.exp(-(now - tipTime) / 64) : 1;
+        if (phase === 'aim' && target !== null && hand.gap <= FREEZE_GAP) {
+          tipTime = now;
+          missSince = null;
+          locate(tip, target);
+          return { aim: tip, target, status: 'aim', pressProgress: 0 };
+        }
+        const tau = target !== null ? 85 : 58;
+        const mix = tip ? 1 - Math.exp(-(now - tipTime) / tau) : 1;
         tip = tip
           ? { x: tip.x + (hand.tip.x - tip.x) * mix, y: tip.y + (hand.tip.y - tip.y) * mix }
           : hand.tip;
         tipTime = now;
         phase = 'aim';
-        const hit = locate(tip);
-        if (target !== hit) {
-          target = hit;
+        const hit = locate(tip, target);
+        if (hit !== null) {
+          missSince = null;
+          if (target !== hit) {
+            target = hit;
+            targetSince = now;
+          }
+        } else if (target !== null) {
+          if (missSince === null) missSince = now;
+          if (now - missSince >= TARGET_GRACE_MS) {
+            target = null;
+            targetSince = now;
+            missSince = null;
+          }
+        } else {
           targetSince = now;
+          missSince = null;
         }
         return { aim: tip, target, status: 'aim', pressProgress: 0 };
       }
